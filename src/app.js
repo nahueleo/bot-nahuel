@@ -45,6 +45,9 @@ async function start() {
     // Conectar Redis antes de aceptar requests
     await getRedisClient();
 
+    // Cargar estado de keys de AI (deshabilitadas) desde Redis
+    await keyManager.init();
+
     // Iniciar procesador de recordatorios
     startReminderProcessor();
 

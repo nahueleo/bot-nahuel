@@ -1,4 +1,5 @@
 import { keyManager } from './key-manager.js';
+import { config } from '../config/index.js';
 import { toolDeclarations } from './tools.js';
 import { listAllCalendars, getEvents, createEvent, findFreeSlots, updateEvent, deleteEvent, createRecurringEvent, searchEvents } from '../calendar/client.js';
 import { scheduleReminder } from '../redis/reminders.js';
@@ -340,7 +341,7 @@ export async function processMessage(userMessage, history, imageContent = null) 
     console.log(`[ai] loop ${loops}  msgs_en_contexto=${currentMessages.length}`);
     let response;
     try {
-      response = await createCompletion({
+      response = await keyManager.createCompletion({
         model:       'anthropic/claude-3-haiku',
         messages:    currentMessages,
         tools:       toolDeclarations,
@@ -360,7 +361,7 @@ export async function processMessage(userMessage, history, imageContent = null) 
         const lastUserMsg   = [...currentMessages].reverse().find(m => m.role === 'user');
         const minimalCtx    = lastUserMsg ? [systemMessage, lastUserMsg] : [systemMessage];
         try {
-          response = await createCompletion({
+          response = await keyManager.createCompletion({
             model:       'anthropic/claude-3-haiku',
             messages:    minimalCtx,
             tools:       toolDeclarations,
