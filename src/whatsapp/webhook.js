@@ -2,7 +2,7 @@ import { Router } from 'express';
 import crypto from 'crypto';
 import { config } from '../config/index.js';
 import { processMessage } from '../ai/claude.js';
-import { getHistory, appendMessage, clearHistory, logMessage } from '../conversation/store.js';
+import { getHistory, setHistory, clearHistory, logMessage } from '../conversation/store.js';
 import { sendWhatsAppMessage } from './api.js';
 import { broadcastSSE } from '../dashboard/routes.js';
 
@@ -142,11 +142,8 @@ async function handleIncoming(body) {
     return;
   }
 
-  // Guardar el historial actualizado (incluye el mensaje del usuario y la respuesta de Claude)
-  // Guardamos solo los últimos mensajes del historial actualizado
-  for (const msg of updatedHistory.slice(history.length)) {
-    await appendMessage(from, msg);
-  }
+  // Guardar el historial completo de forma atómica para evitar cortes en pares tool_use/tool_result
+  await setHistory(from, updatedHistory);
 
   // Loguear para el dashboard y emitir por SSE en tiempo real
   await logMessage(from, text, reply, true);

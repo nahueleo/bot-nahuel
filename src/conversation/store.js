@@ -1,7 +1,18 @@
 import { getRedisClient } from '../redis/client.js';
 
 const CONVERSATION_TTL_SECONDS = 4 * 60 * 60; // 4 horas
-const MAX_HISTORY_MESSAGES = 20; // evitar contextos demasiado largos
+const MAX_HISTORY_MESSAGES = 20;
+
+/**
+ * Trims history to MAX_HISTORY_MESSAGES, always starting from a `user` message
+ * so tool_use/tool_result pairs are never split across the cut boundary.
+ */
+function trimHistory(history) {
+  if (history.length <= MAX_HISTORY_MESSAGES) return history;
+  const trimmed = history.slice(-MAX_HISTORY_MESSAGES);
+  const firstUser = trimmed.findIndex(m => m.role === 'user');
+  return firstUser > 0 ? trimmed.slice(firstUser) : trimmed;
+}
 
 /**
  * Obtiene el historial de conversación para un número de WhatsApp.
@@ -21,21 +32,15 @@ export async function getHistory(phoneNumber) {
 }
 
 /**
- * Agrega un mensaje al historial y renueva el TTL.
+ * Replaces the full conversation history atomically, trimming intelligently.
+ * Prefer this over appendMessage to avoid orphaned tool_result blocks.
  * @param {string} phoneNumber
- * @param {{ role: string, content: string|Array }} message
+ * @param {Array} history
  */
-export async function appendMessage(phoneNumber, message) {
+export async function setHistory(phoneNumber, history) {
   const redis = await getRedisClient();
   const key = `conv:${phoneNumber}`;
-  const history = await getHistory(phoneNumber);
-
-  history.push(message);
-
-  // Mantener solo los últimos N mensajes para no superar límites de contexto
-  const trimmed = history.slice(-MAX_HISTORY_MESSAGES);
-
-  await redis.set(key, JSON.stringify(trimmed), { EX: CONVERSATION_TTL_SECONDS });
+  await redis.set(key, JSON.stringify(trimHistory(history)), { EX: CONVERSATION_TTL_SECONDS });
 }
 
 /**
