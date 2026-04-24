@@ -33,11 +33,21 @@ router.get('/api/events', (req, res) => {
 // ─── API: métricas ────────────────────────────────────────────────────────────
 router.get('/api/metrics', async (req, res) => {
   try {
+    const accounts = await listConnectedAccounts();
     const [messages, reminders, calendars] = await Promise.all([
       getMessageLog(1000),
       getPendingReminders(),
       listAllCalendars().catch(() => []),
     ]);
+
+    let unreadEmails = 0;
+    try {
+      const unreadResults = await Promise.all(
+        accounts.map((a) => getUnreadCount(a).catch(() => ({ unreadCount: 0 }))),
+      );
+      unreadEmails = unreadResults.reduce((s, r) => s + (r.unreadCount || 0), 0);
+    } catch { /* sin permisos gmail aún */ }
+
     const now = Date.now();
     const day  = new Date(now - 86400000);
     const week = new Date(now - 7 * 86400000);
@@ -52,6 +62,7 @@ router.get('/api/metrics', async (req, res) => {
       connectedCalendars: calendars.length,
       totalCalendars:    calendars.reduce((s, c) => s + (c.calendars?.length || 0), 0),
       successRate:       messages.length ? Math.round((success / messages.length) * 100) : 100,
+      unreadEmails,
     });
   } catch {
     res.status(500).json({ error: 'Error obteniendo métricas' });
@@ -844,6 +855,8 @@ async function loadStatus() {
       if (cur && accs.includes(cur)) sel.value = cur;
     };
     _calAccounts = accs;
+    _gmailAccounts = accs;
+    _gtasksAccounts = accs;
     populateSel('cal-account-sel');
     populateSel('gmail-account-sel');
     populateSel('gtasks-account-sel');
@@ -1080,6 +1093,166 @@ async function runTaskNow(id) {
   finally {
     [btn, btn2].forEach(b => { if (b) { b.disabled = false; b.textContent = b.id === 'btn-run-briefing' ? '▶ Enviar ahora' : '▶ Enviar ahora (prueba)'; } });
   }
+}
+
+// ── Gmail ─────────────────────────────────────────────────────────────────
+let _gmailAccounts = [];
+
+async function loadGmail() {
+  const sel      = document.getElementById('gmail-account-sel');
+  const queryEl  = document.getElementById('gmail-query');
+  const listEl   = document.getElementById('gmail-list');
+  const titleEl  = document.getElementById('gmail-list-title');
+  const summaryEl= document.getElementById('gmail-unread-summary');
+
+  const account = sel?.value || _gmailAccounts[0] || '';
+  const query   = queryEl?.value || 'in:inbox';
+
+  if (!account) {
+    if (listEl) listEl.innerHTML = '<div class="empty">Conectá una cuenta de Google primero</div>';
+    return;
+  }
+
+  if (listEl) listEl.innerHTML = '<div class="empty">Cargando...</div>';
+
+  // Resumen de no leídos por cuenta
+  try {
+    const { accounts: unreadAccs } = await fetch('/api/gmail/unread').then(r => r.json());
+    if (summaryEl) {
+      summaryEl.innerHTML = (unreadAccs || []).map(a =>
+        '<div style="background:var(--surface2);border:1px solid var(--border);border-radius:8px;padding:10px 14px;display:flex;align-items:center;gap:8px">' +
+          '<span style="font-size:18px">📧</span>' +
+          '<div><div style="font-size:13px;font-weight:600;color:#f1f5f9">' + a.account + '</div>' +
+          '<div style="font-size:12px;color:' + (a.unreadCount > 0 ? 'var(--orange)' : 'var(--muted)') + '">' +
+            (a.error ? 'Sin permiso' : a.unreadCount + ' sin leer') +
+          '</div></div>' +
+        '</div>'
+      ).join('');
+    }
+  } catch {}
+
+  // Emails
+  try {
+    const data = await fetch('/api/gmail/emails?account=' + encodeURIComponent(account) + '&query=' + encodeURIComponent(query) + '&max=15').then(r => r.json());
+    if (data.error) { listEl.innerHTML = '<div class="empty">Error: ' + data.error + '</div>'; return; }
+    const emails = data.emails || [];
+    if (titleEl) titleEl.textContent = emails.length + ' email' + (emails.length !== 1 ? 's' : '');
+    if (!emails.length) { listEl.innerHTML = '<div class="empty">Sin resultados para esa búsqueda</div>'; return; }
+
+    listEl.innerHTML = emails.map(e =>
+      '<div style="display:flex;align-items:flex-start;gap:12px;padding:12px 0;border-bottom:1px solid rgba(30,58,95,.4)">' +
+        '<div style="width:34px;height:34px;border-radius:50%;background:' + (e.isUnread ? 'rgba(249,115,22,.15)' : 'rgba(30,58,95,.3)') + ';display:flex;align-items:center;justify-content:center;font-size:14px;flex-shrink:0">' +
+          (e.isUnread ? '📬' : '📭') +
+        '</div>' +
+        '<div style="flex:1;min-width:0">' +
+          '<div style="display:flex;justify-content:space-between;align-items:center;gap:8px">' +
+            '<span style="font-size:13px;font-weight:' + (e.isUnread ? '700' : '500') + ';color:' + (e.isUnread ? '#f1f5f9' : 'var(--muted)') + ';white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:60%">' + esc(e.subject || '(sin asunto)') + '</span>' +
+            '<span style="font-size:11px;color:var(--muted);flex-shrink:0">' + esc(e.date?.slice(0, 11) || '') + '</span>' +
+          '</div>' +
+          '<div style="font-size:12px;color:var(--accent);margin-top:2px">' + esc(e.from?.replace(/<.*>/, '').trim() || '') + '</div>' +
+          '<div style="font-size:12px;color:var(--muted);margin-top:3px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">' + esc(e.snippet || '') + '</div>' +
+        '</div>' +
+        (e.isUnread
+          ? '<button onclick="markEmailRead(' + JSON.stringify(account) + ',' + JSON.stringify(e.id) + ',this)" style="flex-shrink:0;padding:4px 10px;font-size:11px;background:transparent;border:1px solid var(--border);color:var(--muted);border-radius:6px;cursor:pointer">✓ Leído</button>'
+          : '') +
+      '</div>'
+    ).join('');
+  } catch (err) {
+    if (listEl) listEl.innerHTML = '<div class="empty">Error cargando emails</div>';
+  }
+}
+
+async function markEmailRead(account, messageId, btn) {
+  btn.disabled = true; btn.textContent = '...';
+  try {
+    await fetch('/api/gmail/mark-read', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ account, messageId }),
+    });
+    btn.closest('div[style]').style.opacity = '.5';
+    btn.remove();
+    showToast('✅ Marcado como leído');
+    loadMetrics();
+  } catch { showToast('Error', false); btn.disabled = false; btn.textContent = '✓ Leído'; }
+}
+
+// ── Google Tasks ──────────────────────────────────────────────────────────
+let _gtasksAccounts = [];
+
+async function loadGTasks() {
+  const sel     = document.getElementById('gtasks-account-sel');
+  const listEl  = document.getElementById('gtasks-list');
+  const countEl = document.getElementById('gtasks-count');
+  const account = sel?.value || _gtasksAccounts[0] || '';
+
+  if (!account) {
+    if (listEl) listEl.innerHTML = '<div class="empty">Conectá una cuenta de Google primero</div>';
+    return;
+  }
+  if (listEl) listEl.innerHTML = '<div class="empty">Cargando...</div>';
+
+  try {
+    const data = await fetch('/api/gtasks?account=' + encodeURIComponent(account)).then(r => r.json());
+    if (data.error) { listEl.innerHTML = '<div class="empty">Error: ' + data.error + '</div>'; return; }
+    const tasks = data.tasks || [];
+    if (countEl) countEl.textContent = tasks.length + ' tarea' + (tasks.length !== 1 ? 's' : '') + ' pendiente' + (tasks.length !== 1 ? 's' : '');
+
+    // Update metric
+    const mEl = document.getElementById('m-tasks');
+    if (mEl) mEl.textContent = tasks.length;
+
+    if (!tasks.length) { listEl.innerHTML = '<div class="empty">¡Sin tareas pendientes! 🎉</div>'; return; }
+
+    listEl.innerHTML = tasks.map(t => {
+      const isOverdue = t.due && new Date(t.due) < new Date();
+      return '<div id="gtask-' + esc(t.id) + '" style="display:flex;align-items:center;gap:12px;padding:12px 0;border-bottom:1px solid rgba(30,58,95,.4)">' +
+        '<button onclick="completeGTask(' + JSON.stringify(account) + ',' + JSON.stringify(t.id) + ',this)" ' +
+          'style="width:22px;height:22px;border-radius:50%;border:2px solid var(--accent2);background:transparent;cursor:pointer;flex-shrink:0;display:flex;align-items:center;justify-content:center;font-size:12px;color:transparent" ' +
+          'title="Marcar como completada">✓</button>' +
+        '<div style="flex:1;min-width:0">' +
+          '<div style="font-size:13px;font-weight:600;color:#f1f5f9">' + esc(t.title) + '</div>' +
+          (t.notes ? '<div style="font-size:12px;color:var(--muted);margin-top:2px">' + esc(t.notes.slice(0, 100)) + '</div>' : '') +
+          (t.due ? '<div style="font-size:11px;color:' + (isOverdue ? 'var(--red)' : 'var(--muted)') + ';margin-top:3px">' +
+            (isOverdue ? '⚠ Vencida: ' : '📅 Vence: ') + new Date(t.due).toLocaleDateString('es-AR', { day:'2-digit', month:'2-digit', year:'numeric' }) +
+          '</div>' : '') +
+        '</div>' +
+        '<button onclick="deleteGTask(' + JSON.stringify(account) + ',' + JSON.stringify(t.id) + ',this)" ' +
+          'style="padding:4px 10px;font-size:11px;background:transparent;border:1px solid rgba(239,68,68,.4);color:var(--red);border-radius:6px;cursor:pointer;flex-shrink:0">🗑</button>' +
+      '</div>';
+    }).join('');
+  } catch {
+    if (listEl) listEl.innerHTML = '<div class="empty">Error cargando tareas</div>';
+  }
+}
+
+async function completeGTask(account, taskId, btn) {
+  btn.style.background = 'var(--accent2)'; btn.style.color = 'white'; btn.disabled = true;
+  try {
+    await fetch('/api/gtasks/complete', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ account, taskId }),
+    });
+    document.getElementById('gtask-' + taskId)?.remove();
+    showToast('✅ Tarea completada');
+    loadGTasks();
+  } catch { showToast('Error', false); btn.style.background = 'transparent'; btn.style.color = 'transparent'; btn.disabled = false; }
+}
+
+async function deleteGTask(account, taskId, btn) {
+  if (!confirm('¿Eliminar esta tarea?')) return;
+  btn.disabled = true;
+  try {
+    await fetch('/api/gtasks/' + encodeURIComponent(taskId) + '?account=' + encodeURIComponent(account), { method: 'DELETE' });
+    document.getElementById('gtask-' + taskId)?.remove();
+    showToast('🗑 Tarea eliminada');
+    loadGTasks();
+  } catch { showToast('Error', false); btn.disabled = false; }
+}
+
+function esc(s) {
+  return String(s || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
 }
 
 // ── Init & polling ────────────────────────────────────────────────────────

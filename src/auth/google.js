@@ -2,6 +2,7 @@ import { Router } from 'express';
 import { google } from 'googleapis';
 import { config } from '../config/index.js';
 import { getRedisClient } from '../redis/client.js';
+import { sendWhatsAppMessage } from '../whatsapp/api.js';
 
 const TOKEN_PREFIX = 'gtoken:';
 const TOKEN_TTL = 60 * 60 * 24 * 30; // 30 días (el refresh_token es de larga duración)

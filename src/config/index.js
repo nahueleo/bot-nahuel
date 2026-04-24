@@ -22,8 +22,21 @@ function required(name, fatal = false) {
   return val;
 }
 
+const redirectUri = process.env.GOOGLE_REDIRECT_URI || 'http://localhost:3000/auth/google/callback';
+
+// Derive public base URL from GOOGLE_REDIRECT_URI, or use explicit PUBLIC_URL if set.
+// e.g. "https://abc.ngrok.io/auth/google/callback" → "https://abc.ngrok.io"
+const defaultPublicUrl = process.env.PUBLIC_URL
+  || redirectUri.replace(/\/auth\/google\/callback\/?$/, '');
+
 export const config = {
   port: parseInt(process.env.PORT || '3000', 10),
+
+  // Public-facing base URL (used to generate auth links sent via WhatsApp)
+  publicUrl: defaultPublicUrl,
+
+  // Owner's WhatsApp number in international format (e.g. 5491133334444)
+  ownerPhone: process.env.OWNER_PHONE || '',
 
   whatsapp: {
     accessToken:   required('WHATSAPP_ACCESS_TOKEN'),
@@ -35,7 +48,7 @@ export const config = {
   google: {
     clientId:     required('GOOGLE_CLIENT_ID'),
     clientSecret: required('GOOGLE_CLIENT_SECRET'),
-    redirectUri:  process.env.GOOGLE_REDIRECT_URI || 'http://localhost:3000/auth/google/callback',
+    redirectUri,
   },
 
   groq: {

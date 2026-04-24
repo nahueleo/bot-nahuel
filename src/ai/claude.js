@@ -45,7 +45,9 @@ Reglas importantes:
 - Si el usuario dice "mañana", "próximo lunes", etc., calculá la fecha real. Hoy es: ${new Date().toLocaleDateString('es-AR', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}.
 - Zona horaria del usuario: America/Argentina/Buenos_Aires (UTC-3).
 - Mantené las respuestas concisas para WhatsApp (máximo 3-4 párrafos cortos).
-- Si el usuario escribe "reset" o "reiniciar", indicale que puede escribir ese comando para limpiar el historial.`;
+- Si el usuario escribe "reset" o "reiniciar", indicale que puede escribir ese comando para limpiar el historial.
+- ERRORES DE AUTENTICACIÓN: Si un tool retorna un objeto con "auth_required: true", significa que la cuenta de Google no está conectada. Respondé EXACTAMENTE con este formato (reemplazando los datos del resultado): "La cuenta '[nombre]' no está conectada. Abrí este link para autenticarla: [auth_url]". Mandá el link tal cual, sin acortarlo ni modificarlo. No prometas resolver vos mismo el problema.
+- ERRORES GENERALES: Si un tool retorna { error: "..." }, reportá el problema al usuario de forma clara y concisa. No inventes soluciones que no podés ejecutar.`;
 
 /**
  * Ejecuta la tool solicitada por el modelo.
@@ -172,8 +174,22 @@ async function executeTool(name, args) {
         return { error: `Tool desconocida: ${name}` };
     }
   } catch (err) {
-    console.error(`[ai:tool] ✗ ${name} falló en ${Date.now() - t0}ms:`, err.message?.slice(0, 200));
-    return { error: err.message || 'Error desconocido' };
+    const msg = err.message || 'Error desconocido';
+    console.error(`[ai:tool] ✗ ${name} falló en ${Date.now() - t0}ms:`, msg.slice(0, 200));
+
+    // Enrich auth errors with a clickable link so the model can send it via WhatsApp
+    const accountMatch = msg.match(/Autenticá primero en ([^\s"]+)/);
+    if (accountMatch) {
+      const path = accountMatch[1]; // e.g. /auth/google?account=trabajo
+      const fullUrl = `${config.publicUrl}${path}`;
+      return {
+        error: msg,
+        auth_required: true,
+        auth_url: fullUrl,
+      };
+    }
+
+    return { error: msg };
   }
 }
 
