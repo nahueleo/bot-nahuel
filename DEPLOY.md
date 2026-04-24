@@ -31,7 +31,7 @@ En el servicio Node.js, andá a **Variables** y agregá:
 | `GOOGLE_CLIENT_ID` | Tu client ID de Google |
 | `GOOGLE_CLIENT_SECRET` | Tu client secret de Google |
 | `GOOGLE_REDIRECT_URI` | `https://TU-APP.railway.app/auth/google/callback` |
-| `GROQ_API_KEY` | Tu API key de Groq |
+| `OPENROUTER_API_KEY` | Tu API key de OpenRouter |
 | `REDIS_URL` | Lo provee Railway automáticamente como `${{Redis.REDIS_URL}}` |
 | `PORT` | `3000` |
 
