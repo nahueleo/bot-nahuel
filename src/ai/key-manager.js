@@ -17,7 +17,7 @@ const PROVIDERS = {
   },
   gemini: {
     baseURL: 'https://generativelanguage.googleapis.com/v1beta/openai/',
-    model:   'gemini-1.5-flash',
+    model:   'gemini-2.5-flash',
     supportsImages: true,
   },
 };
