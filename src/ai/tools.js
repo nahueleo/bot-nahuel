@@ -144,4 +144,113 @@ export const toolDeclarations = [
       },
     },
   },
+
+  {
+    type: 'function',
+    function: {
+      name: 'create_recurring_event',
+      description:
+        'Crea un evento que se repite periódicamente (semanal, mensual, etc.). ' +
+        'Útil para reuniones regulares como standups, revisiones mensuales, etc.',
+      parameters: {
+        type: 'object',
+        properties: {
+          account_name: { type: 'string', description: 'Nombre de la cuenta.' },
+          calendar_id:  { type: 'string', description: 'ID del calendario.' },
+          summary:      { type: 'string', description: 'Título del evento.' },
+          start:        { type: 'string', description: 'Fecha/hora inicio primera ocurrencia ISO 8601.' },
+          end:          { type: 'string', description: 'Fecha/hora fin primera ocurrencia ISO 8601.' },
+          frequency:    { type: 'string', enum: ['DAILY', 'WEEKLY', 'MONTHLY', 'YEARLY'], description: 'Frecuencia de repetición.' },
+          interval:     { type: 'number', description: 'Cada cuántas unidades repetir (ej: 2 = cada 2 semanas). Default: 1' },
+          by_day: {
+            type: 'array',
+            items: { type: 'string', enum: ['MO', 'TU', 'WE', 'TH', 'FR', 'SA', 'SU'] },
+            description: 'Días específicos de la semana (solo para WEEKLY).',
+          },
+          until:        { type: 'string', description: 'Fecha hasta la que repetir ISO 8601.' },
+          count:        { type: 'number', description: 'Número máximo de ocurrencias.' },
+          description:  { type: 'string', description: 'Descripción opcional.' },
+          attendees: {
+            type: 'array',
+            items: { type: 'string' },
+            description: 'Emails de los invitados.',
+          },
+          location:  { type: 'string', description: 'Lugar del evento.' },
+          time_zone: { type: 'string', description: 'Zona horaria.' },
+        },
+        required: ['account_name', 'calendar_id', 'summary', 'start', 'end', 'frequency'],
+      },
+    },
+  },
+
+  {
+    type: 'function',
+    function: {
+      name: 'search_events',
+      description:
+        'Busca eventos por palabras clave en el título o descripción. ' +
+        'Útil para encontrar reuniones específicas o eventos relacionados con un tema.',
+      parameters: {
+        type: 'object',
+        properties: {
+          account_name: { type: 'string', description: 'Nombre de la cuenta.' },
+          calendar_id:  { type: 'string', description: 'ID del calendario.' },
+          query:        { type: 'string', description: 'Texto a buscar en título/descripción.' },
+          date_from:    { type: 'string', description: 'Inicio del rango de búsqueda ISO 8601.' },
+          date_to:      { type: 'string', description: 'Fin del rango de búsqueda ISO 8601.' },
+        },
+        required: ['account_name', 'calendar_id', 'query', 'date_from', 'date_to'],
+      },
+    },
+  },
+
+  {
+    type: 'function',
+    function: {
+      name: 'schedule_reminder',
+      description:
+        'Programa un recordatorio automático para un evento. ' +
+        'El recordatorio se enviará por WhatsApp en el momento especificado.',
+      parameters: {
+        type: 'object',
+        properties: {
+          event_id:      { type: 'string', description: 'ID del evento para recordar.' },
+          phone_number:  { type: 'string', description: 'Número de WhatsApp del destinatario.' },
+          reminder_time: { type: 'string', description: 'Fecha/hora del recordatorio ISO 8601.' },
+          message:       { type: 'string', description: 'Mensaje del recordatorio.' },
+        },
+        required: ['event_id', 'phone_number', 'reminder_time', 'message'],
+      },
+    },
+  },
+
+  {
+    type: 'function',
+    function: {
+      name: 'create_event_from_template',
+      description:
+        'Crea un evento usando una plantilla predefinida (standup, reunión equipo, etc.). ' +
+        'Más rápido que especificar todos los detalles manualmente.',
+      parameters: {
+        type: 'object',
+        properties: {
+          account_name:  { type: 'string', description: 'Nombre de la cuenta.' },
+          calendar_id:   { type: 'string', description: 'ID del calendario.' },
+          template_name: { type: 'string', description: 'Nombre de la plantilla (standup, reunion_equipo, revision_mensual, entrevista, presentacion, capacitacion).' },
+          summary:       { type: 'string', description: 'Título personalizado (opcional, usa el de la plantilla si no se especifica).' },
+          start:         { type: 'string', description: 'Fecha/hora inicio ISO 8601.' },
+          end:           { type: 'string', description: 'Fecha/hora fin ISO 8601 (opcional, calcula duración de plantilla).' },
+          description:   { type: 'string', description: 'Descripción personalizada (opcional).' },
+          location:      { type: 'string', description: 'Lugar personalizado (opcional).' },
+          attendees: {
+            type: 'array',
+            items: { type: 'string' },
+            description: 'Emails de invitados.',
+          },
+          time_zone: { type: 'string', description: 'Zona horaria.' },
+        },
+        required: ['account_name', 'calendar_id', 'template_name', 'start'],
+      },
+    },
+  },
 ];

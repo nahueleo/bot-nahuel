@@ -80,7 +80,7 @@ export async function getEvents(accountName, calendarId, dateFrom, dateTo) {
  * Crea un evento en un calendario.
  * @param {string} accountName
  * @param {string} calendarId
- * @param {{ summary, start, end, attendees?, description?, location? }} eventData
+ * @param {{ summary, start, end, attendees?, description?, location?, recurrence? }} eventData
  * @returns {{ id, htmlLink, summary, start, end }}
  */
 export async function createEvent(accountName, calendarId, eventData) {
@@ -100,6 +100,11 @@ export async function createEvent(accountName, calendarId, eventData) {
       timeZone: eventData.timeZone || 'America/Argentina/Buenos_Aires',
     },
   };
+
+  // Agregar recurrencia si se especifica
+  if (eventData.recurrence) {
+    resource.recurrence = [eventData.recurrence];
+  }
 
   // Agregar invitados si se especificaron
   if (Array.isArray(eventData.attendees) && eventData.attendees.length > 0) {
@@ -283,4 +288,128 @@ export async function deleteEvent(accountName, calendarId, eventId) {
 
   console.log(`[calendar] Evento eliminado de "${accountName}/${calendarId}": ${eventId}`);
   return true;
+}
+
+/**
+ * Genera una regla RRULE para eventos recurrentes.
+ * @param {string} frequency - 'DAILY', 'WEEKLY', 'MONTHLY', 'YEARLY'
+ * @param {number} interval - Cada cuántas unidades (ej: cada 2 semanas)
+ * @param {string[]} byDay - Días de la semana (ej: ['MO', 'WE', 'FR'])
+ * @param {Date} until - Fecha hasta la que repetir
+ * @param {number} count - Número máximo de ocurrencias
+ * @returns {string} RRULE string
+ */
+function generateRecurrenceRule(frequency, interval = 1, byDay = [], until = null, count = null) {
+  let rule = `RRULE:FREQ=${frequency};INTERVAL=${interval}`;
+
+  if (byDay.length > 0) {
+    rule += `;BYDAY=${byDay.join(',')}`;
+  }
+
+  if (until) {
+    rule += `;UNTIL=${until.toISOString().replace(/[-:]/g, '').split('.')[0]}Z`;
+  }
+
+  if (count) {
+    rule += `;COUNT=${count}`;
+  }
+
+  return rule;
+}
+
+/**
+ * Crea un evento recurrente en un calendario.
+ * @param {string} accountName
+ * @param {string} calendarId
+ * @param {{ summary, start, end, frequency, interval?, byDay?, until?, count?, attendees?, description?, location? }} eventData
+ * @returns {{ id, htmlLink, summary, start, end }}
+ */
+export async function createRecurringEvent(accountName, calendarId, eventData) {
+  const cal = await getCalendarClient(accountName);
+
+  // Generar regla de recurrencia
+  const recurrenceRule = generateRecurrenceRule(
+    eventData.frequency,
+    eventData.interval || 1,
+    eventData.byDay || [],
+    eventData.until ? new Date(eventData.until) : null,
+    eventData.count
+  );
+
+  // Construir el recurso del evento
+  const resource = {
+    summary:     eventData.summary,
+    description: eventData.description || '',
+    location:    eventData.location || '',
+    start: {
+      dateTime: new Date(eventData.start).toISOString(),
+      timeZone: eventData.timeZone || 'America/Argentina/Buenos_Aires',
+    },
+    end: {
+      dateTime: new Date(eventData.end).toISOString(),
+      timeZone: eventData.timeZone || 'America/Argentina/Buenos_Aires',
+    },
+    recurrence: [recurrenceRule],
+  };
+
+  // Agregar invitados si se especificaron
+  if (Array.isArray(eventData.attendees) && eventData.attendees.length > 0) {
+    const validEmails = eventData.attendees.filter((e) =>
+      typeof e === 'string' && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(e) && e.length < 200,
+    );
+    if (validEmails.length > 0) {
+      resource.attendees = validEmails.map((email) => ({ email }));
+    }
+  }
+
+  const { data } = await cal.events.insert({
+    calendarId,
+    resource,
+    sendUpdates: 'all',
+  });
+
+  console.log(`[calendar] Evento recurrente creado en "${accountName}/${calendarId}": ${data.id}`);
+
+  return {
+    id:      data.id,
+    htmlLink: data.htmlLink,
+    summary: data.summary,
+    start:   data.start?.dateTime || data.start?.date,
+    end:     data.end?.dateTime   || data.end?.date,
+    recurrence: recurrenceRule,
+  };
+}
+
+/**
+ * Busca eventos por texto en título y descripción.
+ * @param {string} accountName
+ * @param {string} calendarId
+ * @param {string} query - Texto a buscar
+ * @param {string} dateFrom - ISO 8601 inicio del rango
+ * @param {string} dateTo - ISO 8601 fin del rango
+ * @returns {Array<{ id, summary, start, end, attendees, htmlLink, snippet }>}
+ */
+export async function searchEvents(accountName, calendarId, query, dateFrom, dateTo) {
+  const cal = await getCalendarClient(accountName);
+
+  const { data } = await cal.events.list({
+    calendarId,
+    timeMin: new Date(dateFrom).toISOString(),
+    timeMax: new Date(dateTo).toISOString(),
+    q: query, // búsqueda de texto
+    singleEvents: true,
+    orderBy: 'startTime',
+    maxResults: 50,
+  });
+
+  return (data.items || []).map((e) => ({
+    id: e.id,
+    summary: e.summary || '(Sin título)',
+    start: e.start?.dateTime || e.start?.date,
+    end:   e.end?.dateTime   || e.end?.date,
+    attendees: (e.attendees || []).map((a) => a.email),
+    htmlLink: e.htmlLink,
+    description: e.description,
+    location: e.location,
+  }));
 }

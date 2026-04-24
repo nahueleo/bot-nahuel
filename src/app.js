@@ -1,6 +1,7 @@
 import express from 'express';
 import { config } from './config/index.js';
 import { getRedisClient } from './redis/client.js';
+import { startReminderProcessor } from './redis/reminder-processor.js';
 import authRouter from './auth/google.js';
 import webhookRouter from './whatsapp/webhook.js';
 import dashboardRouter from './dashboard/routes.js';
@@ -38,6 +39,9 @@ async function start() {
   try {
     // Conectar Redis antes de aceptar requests
     await getRedisClient();
+
+    // Iniciar procesador de recordatorios
+    startReminderProcessor();
 
     app.listen(config.port, () => {
       console.log(`\n🤖 WhatsApp Calendar Bot corriendo en http://localhost:${config.port}`);

@@ -1,7 +1,9 @@
 import OpenAI from 'openai';
 import { config } from '../config/index.js';
 import { toolDeclarations } from './tools.js';
-import { listAllCalendars, getEvents, createEvent, findFreeSlots, updateEvent, deleteEvent } from '../calendar/client.js';
+import { listAllCalendars, getEvents, createEvent, findFreeSlots, updateEvent, deleteEvent, createRecurringEvent, searchEvents } from '../calendar/client.js';
+import { scheduleReminder } from '../redis/reminders.js';
+import { getTemplate, listTemplates } from '../calendar/templates.js';
 
 const openai = new OpenAI({
   apiKey: config.openrouter.apiKey,
@@ -9,11 +11,21 @@ const openai = new OpenAI({
 });
 
 const SYSTEM_CONTENT = `Sos un asistente personal de productividad que ayuda a gestionar el calendario vía WhatsApp.
-Podés leer, crear, modificar y eliminar eventos en todos los calendarios del usuario (trabajo y personales).
+Podés leer, crear, modificar y eliminar eventos en todos los calendarios del usuario (trabajo y personales). También podés crear eventos recurrentes para reuniones regulares, buscar eventos por palabras clave, programar recordatorios automáticos y usar plantillas predefinidas.
+
+Funcionalidades disponibles:
+- Crear eventos únicos o recurrentes
+- Buscar eventos por texto (título/descripción)
+- Editar y eliminar eventos existentes
+- Programar recordatorios automáticos
+- Usar plantillas: standup, reunion_equipo, revision_mensual, entrevista, presentacion, capacitacion
 
 Reglas importantes:
 - Respondé siempre en español.
 - Antes de crear, modificar o eliminar un evento, mostrá un resumen y pedí confirmación explícita.
+- Para eventos recurrentes, preguntá por la frecuencia (diaria, semanal, mensual) y duración.
+- Ofrecé usar plantillas cuando el usuario mencione tipos comunes de reuniones.
+- Sugerí recordatorios automáticos cuando sea apropiado (ej: "te recuerdo 15min antes").
 - Cuando muestres fechas, usá formato legible: "martes 23 de abril a las 15:00".
 - Si el usuario dice "mañana", "próximo lunes", etc., calculá la fecha real. Hoy es: ${new Date().toLocaleDateString('es-AR', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}.
 - Zona horaria del usuario: America/Argentina/Buenos_Aires (UTC-3).
@@ -55,6 +67,42 @@ async function executeTool(name, args) {
 
       case 'delete_event':
         return { deleted: await deleteEvent(args.account_name, args.calendar_id, args.event_id) };
+
+      case 'create_recurring_event':
+        return { event: await createRecurringEvent(args.account_name, args.calendar_id, {
+          summary: args.summary, start: args.start, end: args.end,
+          frequency: args.frequency, interval: args.interval, byDay: args.by_day,
+          until: args.until, count: args.count,
+          description: args.description, attendees: args.attendees,
+          location: args.location, timeZone: args.time_zone,
+        }) };
+
+      case 'search_events':
+        return { events: await searchEvents(args.account_name, args.calendar_id, args.query, args.date_from, args.date_to) };
+
+      case 'schedule_reminder':
+        const reminderTime = new Date(args.reminder_time);
+        await scheduleReminder(args.event_id, args.phone_number, reminderTime, args.message);
+        return { scheduled: true, reminderTime: reminderTime.toISOString() };
+
+      case 'create_event_from_template':
+        const template = getTemplate(args.template_name);
+        if (!template) {
+          return { error: `Plantilla "${args.template_name}" no encontrada. Plantillas disponibles: ${listTemplates().map(t => t.name).join(', ')}` };
+        }
+
+        // Combinar template con datos personalizados
+        const eventData = {
+          summary: args.summary || template.summary,
+          start: args.start,
+          end: args.end || new Date(new Date(args.start).getTime() + template.duration * 60000).toISOString(),
+          description: args.description || template.description,
+          location: args.location || template.location,
+          attendees: args.attendees || template.attendees,
+          timeZone: args.time_zone,
+        };
+
+        return { event: await createEvent(args.account_name, args.calendar_id, eventData) };
 
       default:
         return { error: `Tool desconocida: ${name}` };
