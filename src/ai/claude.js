@@ -4,6 +4,8 @@ import { toolDeclarations } from './tools.js';
 import { listAllCalendars, getEvents, createEvent, findFreeSlots, updateEvent, deleteEvent, createRecurringEvent, searchEvents } from '../calendar/client.js';
 import { scheduleReminder } from '../redis/reminders.js';
 import { getTemplate, listTemplates } from '../calendar/templates.js';
+import { searchEmails, getEmail, markAsRead, trashEmail, getUnreadCount } from '../gmail/client.js';
+import { listTaskLists, getTasks, createTask, updateTask, completeTask, deleteTask } from '../tasks/client.js';
 
 const openai = new OpenAI({
   apiKey: config.openrouter.apiKey,
@@ -114,6 +116,28 @@ async function executeTool(name, args) {
 }
 
 /**
+ * Removes trailing incomplete agentic turns (tool results without a following
+ * assistant text response, or assistant tool_calls without results).
+ * Prevents "unexpected tool_use_id" errors when the previous request hit MAX_LOOPS.
+ */
+function sanitizeHistory(history) {
+  let arr = [...history];
+  let changed = true;
+  while (changed) {
+    changed = false;
+    while (arr.length > 0 && arr[arr.length - 1].role === 'tool') {
+      arr.pop();
+      changed = true;
+    }
+    while (arr.length > 0 && arr[arr.length - 1].role === 'assistant' && arr[arr.length - 1].tool_calls?.length > 0) {
+      arr.pop();
+      changed = true;
+    }
+  }
+  return arr;
+}
+
+/**
  * Procesa un mensaje con Groq (llama-3.3-70b-versatile), ejecutando tools
  * en loop hasta obtener respuesta de texto final.
  *
@@ -123,9 +147,11 @@ async function executeTool(name, args) {
  */
 export async function processMessage(userMessage, history) {
   // Sistema + historial previo + mensaje nuevo
+  // Sanitize history to remove any trailing incomplete agentic turns saved from a previous MAX_LOOPS scenario
+  const cleanHistory = sanitizeHistory(history || []);
   const messages = [
     { role: 'system', content: SYSTEM_CONTENT },
-    ...(history || []),
+    ...cleanHistory,
     { role: 'user', content: userMessage },
   ];
 
@@ -189,8 +215,12 @@ export async function processMessage(userMessage, history) {
   }
 
   // Fallback si se alcanza el límite de loops
+  // Push a final assistant message so the history doesn't end with tool messages,
+  // which would cause "unexpected tool_use_id" errors on the next request.
+  const fallbackReply = 'Alcancé el límite de operaciones. Intentá con una pregunta más simple.';
+  currentMessages.push({ role: 'assistant', content: fallbackReply });
   return {
-    reply:          'Alcancé el límite de operaciones. Intentá con una pregunta más simple.',
+    reply:          fallbackReply,
     updatedHistory: currentMessages.slice(1),
   };
 }

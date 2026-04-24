@@ -6,10 +6,12 @@ import { getRedisClient } from '../redis/client.js';
 const TOKEN_PREFIX = 'gtoken:';
 const TOKEN_TTL = 60 * 60 * 24 * 30; // 30 días (el refresh_token es de larga duración)
 
-// Scopes requeridos: lectura + escritura de calendarios
 const SCOPES = [
   'https://www.googleapis.com/auth/calendar',
   'https://www.googleapis.com/auth/calendar.events',
+  'https://www.googleapis.com/auth/gmail.readonly',
+  'https://www.googleapis.com/auth/gmail.modify',
+  'https://www.googleapis.com/auth/tasks',
 ];
 
 /**

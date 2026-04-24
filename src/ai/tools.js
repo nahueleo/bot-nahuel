@@ -224,6 +224,206 @@ export const toolDeclarations = [
     },
   },
 
+  // ─── Gmail ────────────────────────────────────────────────────────────────────
+
+  {
+    type: 'function',
+    function: {
+      name: 'search_emails',
+      description:
+        'Busca emails en Gmail usando la sintaxis de búsqueda de Google. ' +
+        'Útil para encontrar emails por remitente, asunto, fecha o estado (leído/no leído). ' +
+        'Ejemplos de query: "is:unread", "from:juan@gmail.com", "subject:factura", "after:2025/04/01".',
+      parameters: {
+        type: 'object',
+        properties: {
+          account_name: { type: 'string', description: 'Nombre de la cuenta (ej: "trabajo", "personal").' },
+          query:        { type: 'string', description: 'Query de búsqueda en formato Gmail. Vacío devuelve los más recientes.' },
+          max_results:  { type: 'number', description: 'Máximo de emails a devolver (default: 10, máx: 20).' },
+        },
+        required: ['account_name'],
+      },
+    },
+  },
+
+  {
+    type: 'function',
+    function: {
+      name: 'get_email',
+      description:
+        'Obtiene el contenido completo de un email por su ID. ' +
+        'Usar después de search_emails cuando el usuario quiere leer un email específico.',
+      parameters: {
+        type: 'object',
+        properties: {
+          account_name: { type: 'string', description: 'Nombre de la cuenta.' },
+          message_id:   { type: 'string', description: 'ID del mensaje (obtenido de search_emails).' },
+        },
+        required: ['account_name', 'message_id'],
+      },
+    },
+  },
+
+  {
+    type: 'function',
+    function: {
+      name: 'mark_email_as_read',
+      description: 'Marca un email como leído.',
+      parameters: {
+        type: 'object',
+        properties: {
+          account_name: { type: 'string', description: 'Nombre de la cuenta.' },
+          message_id:   { type: 'string', description: 'ID del mensaje.' },
+        },
+        required: ['account_name', 'message_id'],
+      },
+    },
+  },
+
+  {
+    type: 'function',
+    function: {
+      name: 'get_unread_count',
+      description: 'Devuelve cuántos emails no leídos hay en la bandeja de entrada.',
+      parameters: {
+        type: 'object',
+        properties: {
+          account_name: { type: 'string', description: 'Nombre de la cuenta.' },
+        },
+        required: ['account_name'],
+      },
+    },
+  },
+
+  {
+    type: 'function',
+    function: {
+      name: 'trash_email',
+      description: 'Mueve un email a la papelera.',
+      parameters: {
+        type: 'object',
+        properties: {
+          account_name: { type: 'string', description: 'Nombre de la cuenta.' },
+          message_id:   { type: 'string', description: 'ID del mensaje.' },
+        },
+        required: ['account_name', 'message_id'],
+      },
+    },
+  },
+
+  // ─── Google Tasks ──────────────────────────────────────────────────────────────
+
+  {
+    type: 'function',
+    function: {
+      name: 'list_task_lists',
+      description: 'Lista todas las listas de tareas del usuario en Google Tasks.',
+      parameters: {
+        type: 'object',
+        properties: {
+          account_name: { type: 'string', description: 'Nombre de la cuenta.' },
+        },
+        required: ['account_name'],
+      },
+    },
+  },
+
+  {
+    type: 'function',
+    function: {
+      name: 'get_tasks',
+      description:
+        'Obtiene las tareas de una lista. ' +
+        'Usar "@default" como task_list_id para la lista principal.',
+      parameters: {
+        type: 'object',
+        properties: {
+          account_name:   { type: 'string', description: 'Nombre de la cuenta.' },
+          task_list_id:   { type: 'string', description: 'ID de la lista de tareas (default: "@default").' },
+          show_completed: { type: 'boolean', description: 'Incluir tareas completadas (default: false).' },
+        },
+        required: ['account_name'],
+      },
+    },
+  },
+
+  {
+    type: 'function',
+    function: {
+      name: 'create_task',
+      description:
+        'Crea una nueva tarea en Google Tasks. ' +
+        'Ideal cuando el usuario dice "recordame hacer X", "anotá que tengo que...", etc.',
+      parameters: {
+        type: 'object',
+        properties: {
+          account_name: { type: 'string', description: 'Nombre de la cuenta.' },
+          task_list_id: { type: 'string', description: 'ID de la lista (default: "@default").' },
+          title:        { type: 'string', description: 'Título de la tarea.' },
+          notes:        { type: 'string', description: 'Notas adicionales (opcional).' },
+          due:          { type: 'string', description: 'Fecha de vencimiento ISO 8601 (opcional). Ej: "2025-04-25".' },
+        },
+        required: ['account_name', 'title'],
+      },
+    },
+  },
+
+  {
+    type: 'function',
+    function: {
+      name: 'update_task',
+      description: 'Modifica el título, notas o fecha de vencimiento de una tarea existente.',
+      parameters: {
+        type: 'object',
+        properties: {
+          account_name: { type: 'string', description: 'Nombre de la cuenta.' },
+          task_list_id: { type: 'string', description: 'ID de la lista (default: "@default").' },
+          task_id:      { type: 'string', description: 'ID de la tarea (obtenido de get_tasks).' },
+          title:        { type: 'string', description: 'Nuevo título.' },
+          notes:        { type: 'string', description: 'Nuevas notas.' },
+          due:          { type: 'string', description: 'Nueva fecha de vencimiento ISO 8601.' },
+        },
+        required: ['account_name', 'task_id'],
+      },
+    },
+  },
+
+  {
+    type: 'function',
+    function: {
+      name: 'complete_task',
+      description: 'Marca una tarea como completada.',
+      parameters: {
+        type: 'object',
+        properties: {
+          account_name: { type: 'string', description: 'Nombre de la cuenta.' },
+          task_list_id: { type: 'string', description: 'ID de la lista (default: "@default").' },
+          task_id:      { type: 'string', description: 'ID de la tarea.' },
+        },
+        required: ['account_name', 'task_id'],
+      },
+    },
+  },
+
+  {
+    type: 'function',
+    function: {
+      name: 'delete_task',
+      description: 'Elimina una tarea de Google Tasks.',
+      parameters: {
+        type: 'object',
+        properties: {
+          account_name: { type: 'string', description: 'Nombre de la cuenta.' },
+          task_list_id: { type: 'string', description: 'ID de la lista (default: "@default").' },
+          task_id:      { type: 'string', description: 'ID de la tarea.' },
+        },
+        required: ['account_name', 'task_id'],
+      },
+    },
+  },
+
+  // ─── Plantillas ────────────────────────────────────────────────────────────────
+
   {
     type: 'function',
     function: {
