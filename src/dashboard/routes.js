@@ -93,6 +93,32 @@ router.get('/api/reminders', async (req, res) => {
   }
 });
 
+// ─── API: estado general del dashboard ────────────────────────────────────────
+router.get('/api/status', async (req, res) => {
+  try {
+    const [accounts, messages] = await Promise.all([
+      listConnectedAccounts(),
+      getMessageLog(20),
+    ]);
+
+    let redisOk = true;
+    try {
+      await getRedisClient();
+    } catch {
+      redisOk = false;
+    }
+
+    res.json({
+      uptime: Math.floor((Date.now() - startTime) / 1000),
+      redis: redisOk,
+      accounts,
+      messages,
+    });
+  } catch (err) {
+    res.status(500).json({ error: 'Error obteniendo estado del dashboard' });
+  }
+});
+
 function calculateAverageResponseTime(messages) {
   const responseTimes = messages
     .filter(m => m.response && m.timestamp)
@@ -377,8 +403,9 @@ function getDashboardHTML() {
         const eventsEl = document.getElementById('events-list');
         if (accounts.length > 0) {
           try {
-            const events = await fetch('/api/calendar-events?account=' + accounts[0].email + '&calendar=primary&days=7').then(r => r.json());
-            if (events.events.length === 0) {
+            const accountName = encodeURIComponent(accounts[0]);
+            const events = await fetch('/api/calendar-events?account=' + accountName + '&calendar=primary&days=7').then(r => r.json());
+            if (!events.events || events.events.length === 0) {
               eventsEl.innerHTML = '<div class="empty">Sin eventos próximos</div>';
             } else {
               const eventItems = events.events.slice(0, 10).map(function(evt) {
