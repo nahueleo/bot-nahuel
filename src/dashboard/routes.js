@@ -408,8 +408,11 @@ input[type=text]:focus,input[type=time]:focus,select:focus{border-color:var(--ac
   <div class="nav-item active" data-tab="overview">   <span class="nav-icon">📊</span> Dashboard</div>
   <div class="nav-item" data-tab="tasks">             <span class="nav-icon">⚙️</span> Tareas programadas</div>
   <div class="nav-item" data-tab="messages">          <span class="nav-icon">💬</span> Mensajes</div>
-  <div class="nav-section">Sistema</div>
+  <div class="nav-section">Google</div>
   <div class="nav-item" data-tab="calendar">          <span class="nav-icon">📅</span> Calendario</div>
+  <div class="nav-item" data-tab="gmail">             <span class="nav-icon">📧</span> Gmail</div>
+  <div class="nav-item" data-tab="gtasks">            <span class="nav-icon">✅</span> Google Tasks</div>
+  <div class="nav-section">Sistema</div>
   <div class="nav-item" data-tab="system">            <span class="nav-icon">🔧</span> Sistema</div>
   <div class="nav-section">Acciones</div>
   <div style="padding:0 12px;display:flex;flex-direction:column;gap:6px">
@@ -430,6 +433,8 @@ input[type=text]:focus,input[type=time]:focus,select:focus{border-color:var(--ac
     <div class="metric"><div class="metric-val" id="m-reminders">0</div><div class="metric-lbl">Recordatorios</div></div>
     <div class="metric"><div class="metric-val" id="m-success">100%</div><div class="metric-lbl">Tasa de éxito</div></div>
     <div class="metric"><div class="metric-val" id="m-calendars">0</div><div class="metric-lbl">Calendarios</div></div>
+    <div class="metric" style="cursor:pointer" onclick="goToTab('gmail')"><div class="metric-val" id="m-unread" style="color:var(--orange)">—</div><div class="metric-lbl">Emails sin leer</div></div>
+    <div class="metric" style="cursor:pointer" onclick="goToTab('gtasks')"><div class="metric-val" id="m-tasks" style="color:var(--accent2)">—</div><div class="metric-lbl">Tareas pendientes</div></div>
   </div>
 
   <div class="grid-2">
@@ -621,6 +626,66 @@ input[type=text]:focus,input[type=time]:focus,select:focus{border-color:var(--ac
   </div>
 </div>
 
+<!-- ════════════════════ TAB: GMAIL ════════════════════ -->
+<div class="tab-content" id="tab-gmail">
+  <h2 style="font-size:18px;font-weight:700;color:#f1f5f9;margin-bottom:16px">📧 Gmail</h2>
+
+  <!-- Filtros -->
+  <div class="card" style="margin-bottom:16px">
+    <div style="display:flex;gap:12px;align-items:flex-end;flex-wrap:wrap">
+      <div class="field" style="margin:0;flex:1;min-width:140px">
+        <label>Cuenta</label>
+        <select id="gmail-account-sel" onchange="loadGmail()">
+          <option value="">Cargando...</option>
+        </select>
+      </div>
+      <div class="field" style="margin:0;flex:2;min-width:200px">
+        <label>Búsqueda (Gmail query)</label>
+        <input type="text" id="gmail-query" placeholder="is:unread · from:juan@... · subject:..." value="in:inbox">
+      </div>
+      <button class="btn btn-primary" style="margin-bottom:0" onclick="loadGmail()">🔍 Buscar</button>
+    </div>
+  </div>
+
+  <!-- Resumen unread por cuenta -->
+  <div id="gmail-unread-summary" style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:16px"></div>
+
+  <!-- Lista de emails -->
+  <div class="card">
+    <div class="card-title" style="justify-content:space-between">
+      <span style="display:flex;align-items:center;gap:6px">📧 <span id="gmail-list-title">Emails</span></span>
+      <button class="btn btn-ghost" style="padding:4px 10px;font-size:11px" onclick="loadGmail()">↻</button>
+    </div>
+    <div id="gmail-list"><div class="empty">Cargando...</div></div>
+  </div>
+</div>
+
+<!-- ════════════════════ TAB: GOOGLE TASKS ════════════════════ -->
+<div class="tab-content" id="tab-gtasks">
+  <h2 style="font-size:18px;font-weight:700;color:#f1f5f9;margin-bottom:16px">✅ Google Tasks</h2>
+
+  <!-- Filtros -->
+  <div class="card" style="margin-bottom:16px">
+    <div style="display:flex;gap:12px;align-items:flex-end;flex-wrap:wrap">
+      <div class="field" style="margin:0;flex:1;min-width:140px">
+        <label>Cuenta</label>
+        <select id="gtasks-account-sel" onchange="loadGTasks()">
+          <option value="">Cargando...</option>
+        </select>
+      </div>
+      <button class="btn btn-ghost" style="margin-bottom:0" onclick="loadGTasks()">↻ Actualizar</button>
+    </div>
+  </div>
+
+  <!-- Lista de tareas -->
+  <div class="card">
+    <div class="card-title" style="justify-content:space-between">
+      <span style="display:flex;align-items:center;gap:6px">✅ <span id="gtasks-count">Tareas pendientes</span></span>
+    </div>
+    <div id="gtasks-list"><div class="empty">Cargando...</div></div>
+  </div>
+</div>
+
 <!-- ════════════════════ TAB: SISTEMA ════════════════════ -->
 <div class="tab-content" id="tab-system">
   <h2 style="font-size:18px;font-weight:700;color:#f1f5f9;margin-bottom:20px">🔧 Sistema</h2>
@@ -697,6 +762,8 @@ function goToTab(id) {
   document.getElementById('tab-' + id)?.classList.add('active');
   document.querySelector('[data-tab=' + id + ']')?.classList.add('active');
   if (id === 'calendar') loadCalendar();
+  if (id === 'gmail') loadGmail();
+  if (id === 'gtasks') loadGTasks();
 }
 document.querySelectorAll('.nav-item[data-tab]').forEach(el => {
   el.addEventListener('click', () => goToTab(el.dataset.tab));
@@ -732,6 +799,7 @@ async function loadMetrics() {
     document.getElementById('m-success').textContent   = d.successRate + '%';
     document.getElementById('m-calendars').textContent = d.totalCalendars;
     document.getElementById('val-success').textContent = d.successRate + '%';
+    if (d.unreadEmails !== undefined) document.getElementById('m-unread').textContent = d.unreadEmails;
   } catch {}
 }
 
@@ -753,18 +821,32 @@ async function loadStatus() {
       al.innerHTML = d.accounts.map(a =>
         '<div class="account-row">' +
           '<div class="account-avatar">' + a[0].toUpperCase() + '</div>' +
-          '<div><div class="account-name">' + a + '</div><div class="account-sub">Google Calendar</div></div>' +
+          '<div><div class="account-name">' + a + '</div><div class="account-sub">Calendar · Gmail · Tasks</div></div>' +
           '<a href="/auth/google?account=' + a + '" style="margin-left:auto;font-size:11px;color:var(--accent)">Reconectar</a>' +
         '</div>'
       ).join('');
     }
 
-    // Populate calendar account dropdown
+    // Populate task config calendar account dropdown
     const sel = document.getElementById('mb-calendar-account');
     const curVal = sel.value;
     sel.innerHTML = '<option value="">— Sin calendario —</option>' +
       (d.accounts||[]).map(a => '<option value="' + a + '">' + a + '</option>').join('');
     if (curVal) sel.value = curVal;
+
+    // Populate calendar/gmail/gtasks account selectors
+    const accs = d.accounts || [];
+    const populateSel = (id) => {
+      const sel = document.getElementById(id);
+      if (!sel || !accs.length) return;
+      const cur = sel.value;
+      sel.innerHTML = accs.map(a => '<option value="' + a + '">' + a + '</option>').join('');
+      if (cur && accs.includes(cur)) sel.value = cur;
+    };
+    _calAccounts = accs;
+    populateSel('cal-account-sel');
+    populateSel('gmail-account-sel');
+    populateSel('gtasks-account-sel');
 
     // Messages — populate both overview preview and full messages tab
     if (d.messages?.length) {
@@ -783,54 +865,77 @@ async function loadStatus() {
 }
 
 // ── Calendar & Reminders ──────────────────────────────────────────────────
+let _calAccounts = [];
+
 async function loadCalendar() {
-  try {
-    const status = await fetch('/api/status').then(r => r.json());
-    const accounts = status.accounts || [];
+  // Fetch accounts if not yet loaded (populate selector)
+  if (!_calAccounts.length) {
+    try {
+      const status = await fetch('/api/status').then(r => r.json());
+      _calAccounts = status.accounts || [];
+      const sel = document.getElementById('cal-account-sel');
+      if (sel) {
+        sel.innerHTML = _calAccounts.length
+          ? _calAccounts.map(a => '<option value="' + a + '">' + a + '</option>').join('')
+          : '<option value="">Sin cuentas conectadas</option>';
+      }
+    } catch {}
+  }
 
-    const evEl = document.getElementById('cal-events-list');
-    const ovEl = document.getElementById('overview-events');
+  const accountSel = document.getElementById('cal-account-sel');
+  const daysSel    = document.getElementById('cal-days-sel');
+  const account    = accountSel?.value || _calAccounts[0] || '';
+  const days       = parseInt(daysSel?.value || '7', 10);
+  const evEl       = document.getElementById('cal-events-list');
+  const ovEl       = document.getElementById('overview-events');
+  const titleEl    = document.getElementById('cal-events-title');
 
-    if (!accounts.length) {
-      evEl.innerHTML = '<div class="empty">Conecta una cuenta de Google para ver eventos</div>';
-      if (ovEl) ovEl.innerHTML = '<div class="empty">Sin cuentas conectadas</div>';
-      return;
+  // Update title
+  const periodLabel = daysSel?.selectedOptions[0]?.text || (days + ' días');
+  if (titleEl) titleEl.textContent = periodLabel;
+
+  if (!account) {
+    if (evEl) evEl.innerHTML = '<div class="empty">Conecta una cuenta de Google para ver eventos</div>';
+    if (ovEl) ovEl.innerHTML = '<div class="empty">Sin cuentas conectadas</div>';
+  } else {
+    try {
+      if (evEl) evEl.innerHTML = '<div class="empty">Cargando...</div>';
+      const data = await fetch('/api/calendar-events?account=' + encodeURIComponent(account) + '&calendar=primary&days=' + days).then(r => r.json());
+      const events = data.events || [];
+
+      const renderEvents = (el, max) => {
+        if (!el) return;
+        if (!events.length) { el.innerHTML = '<div class="empty">Sin eventos en este período</div>'; return; }
+        el.innerHTML = events.slice(0, max).map(e =>
+          '<div class="list-item">' +
+            '<div class="list-icon li-blue">📅</div>' +
+            '<div class="list-content">' +
+              '<div class="list-title">' + (e.summary || 'Sin título') + '</div>' +
+              '<div class="list-meta">' + fmtEvent(e.start) + '</div>' +
+            '</div>' +
+          '</div>'
+        ).join('');
+      };
+
+      renderEvents(evEl, 50);
+      renderEvents(ovEl, 4);
+    } catch {
+      if (evEl) evEl.innerHTML = '<div class="empty">Error cargando eventos</div>';
     }
-
-    const data = await fetch('/api/calendar-events?account=' + encodeURIComponent(accounts[0]) + '&calendar=primary&days=7').then(r => r.json());
-    const events = data.events || [];
-
-    const renderEvents = (el, max) => {
-      if (!events.length) { el.innerHTML = '<div class="empty">Sin eventos próximos</div>'; return; }
-      el.innerHTML = events.slice(0, max).map(e => {
-        // e.start is already a string (dateTime or date-only) from the API
-        return '<div class="list-item">' +
-          '<div class="list-icon li-blue">📅</div>' +
-          '<div class="list-content">' +
-            '<div class="list-title">' + (e.summary || 'Sin título') + '</div>' +
-            '<div class="list-meta">' + fmtEvent(e.start) + '</div>' +
-          '</div>' +
-        '</div>';
-      }).join('');
-    };
-
-    renderEvents(evEl, 15);
-    if (ovEl) renderEvents(ovEl, 4);
-  } catch {
-    document.getElementById('cal-events-list').innerHTML = '<div class="empty">Error cargando eventos</div>';
   }
 
   // Reminders
   try {
     const { reminders } = await fetch('/api/reminders').then(r => r.json());
     const el = document.getElementById('reminders-list');
+    if (!el) return;
     if (!reminders.length) { el.innerHTML = '<div class="empty">Sin recordatorios pendientes</div>'; return; }
     el.innerHTML = reminders.slice(0, 10).map(r =>
       '<div class="list-item">' +
         '<div class="list-icon li-purple">⏰</div>' +
         '<div class="list-content">' +
           '<div class="list-title">' + (r.message || 'Recordatorio') + '</div>' +
-          '<div class="list-meta">' + fmt(r.reminderTime) + '</div>' +
+          '<div class="list-meta">' + fmtEvent(r.reminderTime) + '</div>' +
         '</div>' +
       '</div>'
     ).join('');
