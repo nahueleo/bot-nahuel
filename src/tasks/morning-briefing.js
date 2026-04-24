@@ -18,7 +18,7 @@ function formatEventTime(event) {
   // event.start is already a string: "2026-04-23T10:00:00-03:00" (timed) or "2026-04-23" (all-day)
   if (event.start && event.start.includes('T')) {
     const d = new Date(event.start);
-    return d.toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit', hour12: false });
+    return d.toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit', hour12: false, timeZone: 'America/Argentina/Buenos_Aires' });
   }
   return 'Todo el día';
 }
@@ -26,9 +26,10 @@ function formatEventTime(event) {
 async function getTodayEvents(cfg) {
   if (!cfg.calendarAccount) return [];
   try {
-    const today = new Date();
-    const start = new Date(today.getFullYear(), today.getMonth(), today.getDate(), 0, 0, 0);
-    const end   = new Date(today.getFullYear(), today.getMonth(), today.getDate(), 23, 59, 59);
+    // Use ART timezone to get correct "today" boundaries regardless of server timezone
+    const nowART = new Date(new Date().toLocaleString('en-US', { timeZone: 'America/Argentina/Buenos_Aires' }));
+    const start = new Date(`${nowART.getFullYear()}-${String(nowART.getMonth() + 1).padStart(2, '0')}-${String(nowART.getDate()).padStart(2, '0')}T00:00:00-03:00`);
+    const end   = new Date(`${nowART.getFullYear()}-${String(nowART.getMonth() + 1).padStart(2, '0')}-${String(nowART.getDate()).padStart(2, '0')}T23:59:59-03:00`);
     const events = await getEvents(cfg.calendarAccount, 'primary', start.toISOString(), end.toISOString());
     return events || [];
   } catch (err) {

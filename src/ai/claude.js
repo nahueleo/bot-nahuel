@@ -12,7 +12,13 @@ const openai = new OpenAI({
   baseURL: 'https://openrouter.ai/api/v1',
 });
 
-const SYSTEM_CONTENT = `Sos un asistente personal de productividad que gestiona el calendario, el correo y las tareas del usuario vía WhatsApp.
+function buildSystemContent() {
+  const nowART = new Date().toLocaleString('es-AR', {
+    timeZone: 'America/Argentina/Buenos_Aires',
+    weekday: 'long', year: 'numeric', month: 'long', day: 'numeric',
+    hour: '2-digit', minute: '2-digit', hour12: false,
+  });
+  return `Sos un asistente personal de productividad que gestiona el calendario, el correo y las tareas del usuario vía WhatsApp.
 
 📅 CALENDARIO:
 - Crear eventos únicos o recurrentes
@@ -42,12 +48,13 @@ Reglas importantes:
 - Para emails: nunca expongas el cuerpo completo si es muy largo; resumí el contenido en 2-3 líneas.
 - Para tareas: si el usuario dice "anotá", "recordame", "tengo que hacer", interpretá eso como crear una tarea.
 - Cuando muestres fechas, usá formato legible: "martes 23 de abril a las 15:00".
-- Si el usuario dice "mañana", "próximo lunes", etc., calculá la fecha real. Hoy es: ${new Date().toLocaleDateString('es-AR', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}.
-- Zona horaria del usuario: America/Argentina/Buenos_Aires (UTC-3).
+- Si el usuario dice "mañana", "próximo lunes", etc., calculá la fecha real. Ahora mismo en Argentina es: ${nowART}.
+- Zona horaria del usuario: America/Argentina/Buenos_Aires (UTC-3). IMPORTANTE: cuando recibas fechas con offset como "T10:20:00Z" o "T10:20:00-03:00", siempre convertílas a la hora local del usuario antes de mostrarlas.
 - Mantené las respuestas concisas para WhatsApp (máximo 3-4 párrafos cortos).
 - Si el usuario escribe "reset" o "reiniciar", indicale que puede escribir ese comando para limpiar el historial.
 - ERRORES DE AUTENTICACIÓN: Si un tool retorna un objeto con "auth_required: true", significa que la cuenta de Google no está conectada. Respondé EXACTAMENTE con este formato (reemplazando los datos del resultado): "La cuenta '[nombre]' no está conectada. Abrí este link para autenticarla: [auth_url]". Mandá el link tal cual, sin acortarlo ni modificarlo. No prometas resolver vos mismo el problema.
 - ERRORES GENERALES: Si un tool retorna { error: "..." }, reportá el problema al usuario de forma clara y concisa. No inventes soluciones que no podés ejecutar.`;
+}
 
 /**
  * Ejecuta la tool solicitada por el modelo.
@@ -251,7 +258,7 @@ export async function processMessage(userMessage, history) {
   }
 
   const messages = [
-    { role: 'system', content: SYSTEM_CONTENT },
+    { role: 'system', content: buildSystemContent() },
     ...cleanHistory,
     { role: 'user', content: userMessage },
   ];

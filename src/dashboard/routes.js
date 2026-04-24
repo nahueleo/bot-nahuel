@@ -397,7 +397,18 @@ input[type=text]:focus,input[type=time]:focus,select:focus{border-color:var(--ac
 .account-name{font-size:13px;font-weight:600;color:#f1f5f9}
 .account-sub{font-size:11px;color:var(--muted)}
 
-@media(max-width:768px){.content{grid-template-columns:1fr}.sidebar{display:none}.grid-2{grid-template-columns:1fr}}
+/* ── Mobile menu ── */
+.menu-btn{display:none;background:none;border:none;color:var(--text);font-size:20px;cursor:pointer;padding:4px 8px;line-height:1}
+.sidebar-overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:199}
+.sidebar-overlay.open{display:block}
+@media(max-width:768px){
+  .content{grid-template-columns:1fr}
+  .sidebar{display:none;position:fixed;top:56px;left:0;bottom:0;width:240px;z-index:200;overflow-y:auto}
+  .sidebar.open{display:block}
+  .menu-btn{display:block}
+  .grid-2{grid-template-columns:1fr}
+  .grid-3{grid-template-columns:1fr}
+}
 </style>
 </head>
 <body>
