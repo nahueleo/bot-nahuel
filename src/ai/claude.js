@@ -134,14 +134,30 @@ export async function processMessage(userMessage, history) {
   let currentMessages = [...messages];
 
   while (loops <= MAX_LOOPS) {
-    const response = await openai.chat.completions.create({
-      model:       'anthropic/claude-3-haiku',
-      messages:    currentMessages,
-      tools:       toolDeclarations,
-      tool_choice: 'auto',
-      temperature: 0.3,
-      max_tokens:  1024,
-    });
+    let response;
+    try {
+      response = await openai.chat.completions.create({
+        model:       'anthropic/claude-3-haiku',
+        messages:    currentMessages,
+        tools:       toolDeclarations,
+        tool_choice: 'auto',
+        temperature: 0.3,
+        max_tokens:  1024,
+      });
+    } catch (err) {
+      console.error('[ai] Error en request de OpenRouter:', err.message || err.code || 'UNKNOWN');
+      if (err.response?.status) {
+        console.error('[ai] OpenRouter HTTP status:', err.response.status);
+      }
+      if (err.error) {
+        console.error('[ai] OpenRouter body error:', JSON.stringify(err.error).slice(0, 1000));
+      } else if (err.response?.data) {
+        console.error('[ai] OpenRouter body data:', JSON.stringify(err.response.data).slice(0, 1000));
+      } else {
+        console.error('[ai] OpenRouter error object:', err);
+      }
+      throw err;
+    }
 
     const assistantMsg = response.choices[0].message;
     currentMessages.push(assistantMsg);

@@ -121,6 +121,12 @@ async function handleIncoming(body) {
     ({ reply, updatedHistory } = await processMessage(text, history));
   } catch (err) {
     console.error('[webhook] Error generando respuesta:', err.message || err.code || err);
+    if (err.error) {
+      console.error('[webhook] Detalle OpenAI error:', JSON.stringify(err.error).slice(0, 1000));
+    }
+    if (err.response?.data) {
+      console.error('[webhook] Detalle response data:', JSON.stringify(err.response.data).slice(0, 1000));
+    }
 
     const errorText = String(err.message || err).toLowerCase();
     const isRateLimitError = errorText.includes('rate limit')

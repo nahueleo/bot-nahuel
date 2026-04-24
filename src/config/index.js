@@ -3,21 +3,21 @@ dotenv.config();
 
 /**
  * Obtiene una variable de entorno requerida.
- * En producción falla si falta. En desarrollo, usa valor vacío y advierte.
+ * En producción o cuando el valor es crítico, falla si falta.
  */
-function required(name) {
+function required(name, fatal = false) {
   const val = process.env[name];
   if (!val) {
     const isDev = process.env.NODE_ENV !== 'production';
     const msg = `[config] Variable de entorno requerida no encontrada: ${name}`;
-    
-    if (isDev) {
+
+    if (isDev && !fatal) {
       console.warn(`${msg} (usando valor vacío en desarrollo)`);
       return '';
-    } else {
-      console.error(msg);
-      process.exit(1);
     }
+
+    console.error(msg);
+    process.exit(1);
   }
   return val;
 }
@@ -43,10 +43,27 @@ export const config = {
   },
 
   openrouter: {
-    apiKey: required('OPENROUTER_API_KEY'),
+    apiKey: required('OPENROUTER_API_KEY', true),
   },
 
   redis: {
     url: process.env.REDIS_URL || 'redis://localhost:6379',
   },
 };
+
+function required(name, fatal = false) {
+  const val = process.env[name];
+  if (!val) {
+    const isDev = process.env.NODE_ENV !== 'production';
+    const msg = `[config] Variable de entorno requerida no encontrada: ${name}`;
+
+    if (isDev && !fatal) {
+      console.warn(`${msg} (usando valor vacío en desarrollo)`);
+      return '';
+    }
+
+    console.error(msg);
+    process.exit(1);
+  }
+  return val;
+}
