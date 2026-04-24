@@ -25,10 +25,17 @@ export async function getHistory(phoneNumber) {
   const redis = await getRedisClient();
   const key = `conv:${phoneNumber}`;
   const raw = await redis.get(key);
-  if (!raw) return [];
+  if (!raw) {
+    console.log(`[store] getHistory ${phoneNumber.slice(-4)}: vacío`);
+    return [];
+  }
   try {
-    return JSON.parse(raw);
+    const history = JSON.parse(raw);
+    const roles = history.map(m => m.role[0]).join('');  // e.g. "uatatat"
+    console.log(`[store] getHistory ${phoneNumber.slice(-4)}: ${history.length} msgs  roles="${roles}"`);
+    return history;
   } catch {
+    console.error(`[store] getHistory ${phoneNumber.slice(-4)}: JSON inválido, retornando vacío`);
     return [];
   }
 }
@@ -42,7 +49,10 @@ export async function getHistory(phoneNumber) {
 export async function setHistory(phoneNumber, history) {
   const redis = await getRedisClient();
   const key = `conv:${phoneNumber}`;
-  await redis.set(key, JSON.stringify(trimHistory(history)), { EX: CONVERSATION_TTL_SECONDS });
+  const trimmed = trimHistory(history);
+  const lastRole = trimmed.length > 0 ? trimmed[trimmed.length - 1].role : 'none';
+  console.log(`[store] setHistory ${phoneNumber.slice(-4)}: guardando ${trimmed.length} msgs  último_role=${lastRole}`);
+  await redis.set(key, JSON.stringify(trimmed), { EX: CONVERSATION_TTL_SECONDS });
 }
 
 /**
