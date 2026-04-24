@@ -27,6 +27,17 @@ function _advanceKey() {
  * - Round-robin: avanza la key en cada request exitoso.
  * - En 429: rota y reintenta con la siguiente key (hasta agotar todas).
  */
+function _isCreditsError(err) {
+  const msg = err.error?.message || err.message || '';
+  return err.status === 429 ||
+    (err.status === 402 && /insufficient credits/i.test(msg));
+}
+
+/**
+ * Wrapper sobre chat.completions.create con rotación de keys.
+ * - Round-robin: avanza la key en cada request exitoso.
+ * - En 429 o 402 (sin créditos): rota y reintenta con la siguiente key.
+ */
 async function createCompletion(params) {
   for (let attempt = 0; attempt < _clients.length; attempt++) {
     try {
@@ -34,8 +45,8 @@ async function createCompletion(params) {
       _advanceKey(); // distribución round-robin en éxito
       return result;
     } catch (err) {
-      if (err.status === 429) {
-        console.warn(`[ai:keys] 429 rate limit en key ${_keyIndex + 1}/${_clients.length}. Rotando...`);
+      if (_isCreditsError(err)) {
+        console.warn(`[ai:keys] ${err.status} en key ${_keyIndex + 1}/${_clients.length}. Rotando...`);
         _advanceKey();
         if (attempt < _clients.length - 1) continue;
       }
