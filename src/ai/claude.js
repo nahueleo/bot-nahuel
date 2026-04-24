@@ -7,10 +7,42 @@ import { getTemplate, listTemplates } from '../calendar/templates.js';
 import { searchEmails, getEmail, markAsRead, trashEmail, getUnreadCount } from '../gmail/client.js';
 import { listTaskLists, getTasks, createTask, updateTask, completeTask, deleteTask } from '../tasks/client.js';
 
-const openai = new OpenAI({
-  apiKey: config.openrouter.apiKey,
-  baseURL: 'https://openrouter.ai/api/v1',
-});
+// ─── Key rotation ────────────────────────────────────────────────────────────
+const _clients = config.openrouter.apiKeys.map(
+  apiKey => new OpenAI({ apiKey, baseURL: 'https://openrouter.ai/api/v1' }),
+);
+let _keyIndex = 0;
+console.log(`[ai:keys] ${_clients.length} API key(s) cargada(s) para OpenRouter`);
+
+function _currentClient() {
+  return _clients[_keyIndex];
+}
+
+function _advanceKey() {
+  _keyIndex = (_keyIndex + 1) % _clients.length;
+}
+
+/**
+ * Wrapper sobre chat.completions.create con rotación de keys.
+ * - Round-robin: avanza la key en cada request exitoso.
+ * - En 429: rota y reintenta con la siguiente key (hasta agotar todas).
+ */
+async function createCompletion(params) {
+  for (let attempt = 0; attempt < _clients.length; attempt++) {
+    try {
+      const result = await _currentClient().chat.completions.create(params);
+      _advanceKey(); // distribución round-robin en éxito
+      return result;
+    } catch (err) {
+      if (err.status === 429) {
+        console.warn(`[ai:keys] 429 rate limit en key ${_keyIndex + 1}/${_clients.length}. Rotando...`);
+        _advanceKey();
+        if (attempt < _clients.length - 1) continue;
+      }
+      throw err;
+    }
+  }
+}
 
 function buildSystemContent() {
   const nowART = new Date().toLocaleString('es-AR', {
@@ -52,7 +84,7 @@ Reglas importantes:
 - Zona horaria del usuario: America/Argentina/Buenos_Aires (UTC-3). IMPORTANTE: cuando recibas fechas con offset como "T10:20:00Z" o "T10:20:00-03:00", siempre convertílas a la hora local del usuario antes de mostrarlas.
 - Mantené las respuestas concisas para WhatsApp (máximo 3-4 párrafos cortos).
 - Si el usuario escribe "reset" o "reiniciar", indicale que puede escribir ese comando para limpiar el historial.
-- ERRORES DE AUTENTICACIÓN: Si un tool retorna un objeto con "auth_required: true", significa que la cuenta de Google no está conectada. Respondé EXACTAMENTE con este formato (reemplazando los datos del resultado): "La cuenta '[nombre]' no está conectada. Abrí este link para autenticarla: [auth_url]". Mandá el link tal cual, sin acortarlo ni modificarlo. No prometas resolver vos mismo el problema.
+- ERRORES DE AUTENTICACIÓN: Si un tool retorna un objeto con "auth_required: true", significa que la cuenta de Google no está conectada o necesita reautorizarse (por ejemplo, para acceder a Tasks o Gmail que fueron agregados después). Respondé EXACTAMENTE con este formato (reemplazando los datos del resultado): "La cuenta '[nombre]' necesita autorizarse. Abrí este link: [auth_url]". Mandá el link tal cual, sin acortarlo ni modificarlo. No prometas resolver vos mismo el problema.
 - ERRORES GENERALES: Si un tool retorna { error: "..." }, reportá el problema al usuario de forma clara y concisa. No inventes soluciones que no podés ejecutar.`;
 }
 
@@ -196,14 +228,31 @@ async function executeTool(name, args) {
       };
     }
 
+    // Detect Google API 403 scope errors — token exists but lacks required permissions
+    // (e.g. tasks scope added after initial auth, or gmail scope missing).
+    const httpStatus = err.status ?? err.code ?? err.response?.status;
+    const isPermissionError = httpStatus === 403 ||
+      msg.toLowerCase().includes('insufficient') ||
+      msg.toLowerCase().includes('permission_denied');
+
+    if (isPermissionError && args.account_name) {
+      const path = `/auth/google?account=${encodeURIComponent(args.account_name)}`;
+      const fullUrl = `${config.publicUrl}${path}`;
+      console.warn(`[ai:tool] 403 scope error for account "${args.account_name}" — needs re-auth`);
+      return {
+        error: `La cuenta "${args.account_name}" necesita reautorizarse para acceder a esta función.`,
+        auth_required: true,
+        auth_url: fullUrl,
+      };
+    }
+
     return { error: msg };
   }
 }
 
 // Token budget para el prompt completo (sistema + tools + historial + mensaje actual).
-// OpenRouter free tier limita ~8334 tokens; dejamos margen de ~1500 para el mensaje
-// actual, tool declarations y respuesta del modelo.
-const PROMPT_TOKEN_BUDGET = 6800;
+// Conservador: deja margen para tool declarations (~1500 tokens) y respuesta del modelo.
+const PROMPT_TOKEN_BUDGET = 5500;
 
 /**
  * Estimación burda de tokens: ~4 chars por token (conservador).
@@ -328,7 +377,7 @@ export async function processMessage(userMessage, history, imageContent = null) 
     console.log(`[ai] loop ${loops}  msgs_en_contexto=${currentMessages.length}`);
     let response;
     try {
-      response = await openai.chat.completions.create({
+      response = await createCompletion({
         model:       'anthropic/claude-3-haiku',
         messages:    currentMessages,
         tools:       toolDeclarations,
@@ -337,20 +386,44 @@ export async function processMessage(userMessage, history, imageContent = null) 
         max_tokens:  1024,
       });
     } catch (err) {
-      console.error('[ai] Error en request de OpenRouter:', err.message || err.code || 'UNKNOWN');
-      if (err.response?.status) {
-        console.error('[ai] OpenRouter HTTP status:', err.response.status);
-      }
-      if (err.error) {
-        console.error('[ai] OpenRouter body error:', JSON.stringify(err.error).slice(0, 1000));
-        // Dump first few messages of context to help diagnose malformed history
-        console.error('[ai] Primeros 3 msgs enviados:', JSON.stringify(currentMessages.slice(1, 4)).slice(0, 800));
-      } else if (err.response?.data) {
-        console.error('[ai] OpenRouter body data:', JSON.stringify(err.response.data).slice(0, 1000));
+      // ── 402 token limit: reintentar con contexto mínimo ──────────────────────
+      const is402 = err.status === 402 || err.error?.code === 402;
+      const limitMatch = (err.error?.message || err.message || '').match(/(\d+) > (\d+)/);
+      if (is402 && limitMatch) {
+        const [, used, limit] = limitMatch;
+        console.warn(`[ai:retry] 402 token limit (${used} > ${limit}). Reintentando con contexto mínimo.`);
+        // Mantener solo system + último mensaje de usuario (sin historial)
+        const systemMessage = currentMessages[0];
+        const lastUserMsg   = [...currentMessages].reverse().find(m => m.role === 'user');
+        const minimalCtx    = lastUserMsg ? [systemMessage, lastUserMsg] : [systemMessage];
+        try {
+          response = await createCompletion({
+            model:       'anthropic/claude-3-haiku',
+            messages:    minimalCtx,
+            tools:       toolDeclarations,
+            tool_choice: 'auto',
+            temperature: 0.3,
+            max_tokens:  1024,
+          });
+          // Si el retry funcionó, descartar historial para no volver a explotar
+          currentMessages = minimalCtx;
+          console.warn('[ai:retry] ✓ Respuesta OK con contexto mínimo (historial descartado).');
+        } catch (retryErr) {
+          console.error('[ai:retry] ✗ Falló el reintento:', retryErr.message || retryErr.error?.message);
+          throw retryErr;
+        }
       } else {
-        console.error('[ai] OpenRouter error object:', err);
+        console.error('[ai] Error en request de OpenRouter:', err.message || err.code || 'UNKNOWN');
+        if (err.error) {
+          console.error('[ai] OpenRouter body error:', JSON.stringify(err.error).slice(0, 1000));
+          console.error('[ai] Primeros 3 msgs enviados:', JSON.stringify(currentMessages.slice(1, 4)).slice(0, 800));
+        } else if (err.response?.data) {
+          console.error('[ai] OpenRouter body data:', JSON.stringify(err.response.data).slice(0, 1000));
+        } else {
+          console.error('[ai] OpenRouter error object:', err);
+        }
+        throw err;
       }
-      throw err;
     }
 
     const choice = response.choices[0];

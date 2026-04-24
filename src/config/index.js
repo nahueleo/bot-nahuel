@@ -56,7 +56,10 @@ export const config = {
   },
 
   openrouter: {
-    apiKey: required('OPENROUTER_API_KEY', true),
+    apiKeys: required('OPENROUTER_API_KEY', true)
+      .split(',')
+      .map(k => k.trim())
+      .filter(Boolean),
   },
 
   redis: {
