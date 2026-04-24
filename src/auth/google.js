@@ -147,6 +147,11 @@ router.get(['/auth/google/callback', '/auth/google/callback/'], async (req, res)
 
     await saveTokens(account, tokens);
 
+    if (config.ownerPhone) {
+      sendWhatsAppMessage(config.ownerPhone, `✅ Cuenta *${account}* conectada con Google. Ya podés usarla desde WhatsApp.`)
+        .catch(err => console.error('[auth] Error enviando notificación WA:', err.message));
+    }
+
     res.redirect('/dashboard');
   } catch (err) {
     // No exponer detalles del error OAuth al usuario
