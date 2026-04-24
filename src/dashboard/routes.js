@@ -1187,7 +1187,7 @@ async function loadGmail() {
           '<div style="font-size:12px;color:var(--muted);margin-top:3px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">' + esc(e.snippet || '') + '</div>' +
         '</div>' +
         (e.isUnread
-          ? '<button onclick="markEmailRead(' + JSON.stringify(account) + ',' + JSON.stringify(e.id) + ',this)" style="flex-shrink:0;padding:4px 10px;font-size:11px;background:transparent;border:1px solid var(--border);color:var(--muted);border-radius:6px;cursor:pointer">✓ Leído</button>'
+          ? '<button data-account="' + esc(account) + '" data-id="' + esc(e.id) + '" onclick="markEmailRead(this.dataset.account,this.dataset.id,this)" style="flex-shrink:0;padding:4px 10px;font-size:11px;background:transparent;border:1px solid var(--border);color:var(--muted);border-radius:6px;cursor:pointer">✓ Leído</button>'
           : '') +
       '</div>'
     ).join('');
@@ -1241,7 +1241,7 @@ async function loadGTasks() {
     listEl.innerHTML = tasks.map(t => {
       const isOverdue = t.due && new Date(t.due) < new Date();
       return '<div id="gtask-' + esc(t.id) + '" style="display:flex;align-items:center;gap:12px;padding:12px 0;border-bottom:1px solid rgba(30,58,95,.4)">' +
-        '<button onclick="completeGTask(' + JSON.stringify(account) + ',' + JSON.stringify(t.id) + ',this)" ' +
+        '<button data-account="' + esc(account) + '" data-id="' + esc(t.id) + '" onclick="completeGTask(this.dataset.account,this.dataset.id,this)" ' +
           'style="width:22px;height:22px;border-radius:50%;border:2px solid var(--accent2);background:transparent;cursor:pointer;flex-shrink:0;display:flex;align-items:center;justify-content:center;font-size:12px;color:transparent" ' +
           'title="Marcar como completada">✓</button>' +
         '<div style="flex:1;min-width:0">' +
@@ -1251,7 +1251,7 @@ async function loadGTasks() {
             (isOverdue ? '⚠ Vencida: ' : '📅 Vence: ') + new Date(t.due).toLocaleDateString('es-AR', { day:'2-digit', month:'2-digit', year:'numeric' }) +
           '</div>' : '') +
         '</div>' +
-        '<button onclick="deleteGTask(' + JSON.stringify(account) + ',' + JSON.stringify(t.id) + ',this)" ' +
+        '<button data-account="' + esc(account) + '" data-id="' + esc(t.id) + '" onclick="deleteGTask(this.dataset.account,this.dataset.id,this)" ' +
           'style="padding:4px 10px;font-size:11px;background:transparent;border:1px solid rgba(239,68,68,.4);color:var(--red);border-radius:6px;cursor:pointer;flex-shrink:0">🗑</button>' +
       '</div>';
     }).join('');

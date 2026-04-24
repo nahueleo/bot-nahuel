@@ -1,7 +1,7 @@
 import { getRedisClient } from '../redis/client.js';
 
 const CONVERSATION_TTL_SECONDS = 4 * 60 * 60; // 4 horas
-const MAX_HISTORY_MESSAGES = 20;
+const MAX_HISTORY_MESSAGES = 12;
 
 /**
  * Trims history to MAX_HISTORY_MESSAGES, always starting from a `user` message

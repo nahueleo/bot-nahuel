@@ -200,6 +200,44 @@ async function executeTool(name, args) {
   }
 }
 
+// Token budget para el prompt completo (sistema + tools + historial + mensaje actual).
+// OpenRouter free tier limita ~8334 tokens; dejamos margen de ~1500 para el mensaje
+// actual, tool declarations y respuesta del modelo.
+const PROMPT_TOKEN_BUDGET = 6800;
+
+/**
+ * Estimación burda de tokens: ~4 chars por token (conservador).
+ */
+function estimateTokens(messages) {
+  return messages.reduce((sum, m) => {
+    const content = typeof m.content === 'string'
+      ? m.content
+      : JSON.stringify(m.content);
+    return sum + Math.ceil((content?.length || 0) / 4) + 4; // +4 overhead por mensaje
+  }, 0);
+}
+
+/**
+ * Recorta el historial desde el inicio (mensajes más antiguos) hasta que
+ * los tokens estimados queden bajo PROMPT_TOKEN_BUDGET.
+ * Siempre deja el primer mensaje como `user` para evitar tool_result huérfano.
+ */
+function trimToTokenBudget(systemMsg, history, userMsg) {
+  let trimmed = [...history];
+  while (trimmed.length > 0) {
+    const total = estimateTokens([systemMsg, ...trimmed, userMsg]);
+    if (total <= PROMPT_TOKEN_BUDGET) break;
+
+    // Eliminar el mensaje más antiguo; si quedaría tool_result al inicio, eliminar también
+    trimmed.shift();
+    while (trimmed.length > 0 && trimmed[0].role !== 'user') trimmed.shift();
+  }
+  if (trimmed.length !== history.length) {
+    console.warn(`[ai:budget] Historial recortado por tokens: ${history.length} → ${trimmed.length} msgs`);
+  }
+  return trimmed;
+}
+
 /**
  * Removes trailing incomplete agentic turns (tool results without a following
  * assistant text response, or assistant tool_calls without results).
@@ -270,9 +308,15 @@ export async function processMessage(userMessage, history, imageContent = null) 
       ]
     : userMessage;
 
+  const systemMsg = { role: 'system', content: buildSystemContent() };
+  const userMsg   = { role: 'user', content: typeof userContent === 'string' ? userContent : JSON.stringify(userContent) };
+
+  // Recortar historial si el prompt estimado supera el budget de tokens
+  const budgetHistory = trimToTokenBudget(systemMsg, cleanHistory, userMsg);
+
   const messages = [
-    { role: 'system', content: buildSystemContent() },
-    ...cleanHistory,
+    systemMsg,
+    ...budgetHistory,
     { role: 'user', content: userContent },
   ];
 
@@ -334,10 +378,19 @@ export async function processMessage(userMessage, history, imageContent = null) 
         const result = await executeTool(tc.function.name, args);
         const resultSummary = JSON.stringify(result).slice(0, 100);
         console.log(`[ai:tool] ✓ ${tc.function.name}  id=${tc.id.slice(-8)}  result=${resultSummary}`);
+
+        // Truncar resultados grandes para no explotar el contexto (ej: cuerpos de email completos)
+        const MAX_TOOL_RESULT_CHARS = 3000;
+        let content = JSON.stringify(result);
+        if (content.length > MAX_TOOL_RESULT_CHARS) {
+          console.warn(`[ai:tool] Resultado truncado: ${content.length} → ${MAX_TOOL_RESULT_CHARS} chars (${tc.function.name})`);
+          content = content.slice(0, MAX_TOOL_RESULT_CHARS) + '... [truncado por límite de tokens]';
+        }
+
         return {
           role:         'tool',
           tool_call_id: tc.id,
-          content:      JSON.stringify(result),
+          content,
         };
       }),
     );
