@@ -114,7 +114,27 @@ async function handleIncoming(body) {
   const history = await getHistory(from);
 
   // Procesar con Claude
-  const { reply, updatedHistory } = await processMessage(text, history);
+  let reply;
+  let updatedHistory;
+
+  try {
+    ({ reply, updatedHistory } = await processMessage(text, history));
+  } catch (err) {
+    console.error('[webhook] Error generando respuesta:', err.message || err.code || err);
+
+    const errorText = String(err.message || err).toLowerCase();
+    const isRateLimitError = errorText.includes('rate limit')
+      || errorText.includes('rate_limit')
+      || errorText.includes('tokens per day')
+      || errorText.includes('rate_limit_exceeded');
+
+    const fallbackMessage = isRateLimitError
+      ? 'Estoy recibiendo muchos pedidos del servicio de IA en este momento. Probá de nuevo en unos minutos, por favor.'
+      : 'Hubo un error al procesar tu mensaje. Intentá nuevamente en unos instantes.';
+
+    await sendWhatsAppMessage(from, fallbackMessage);
+    return;
+  }
 
   // Guardar el historial actualizado (incluye el mensaje del usuario y la respuesta de Claude)
   // Guardamos solo los últimos mensajes del historial actualizado
