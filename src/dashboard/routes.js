@@ -398,14 +398,17 @@ input[type=text]:focus,input[type=time]:focus,select:focus{border-color:var(--ac
 .account-sub{font-size:11px;color:var(--muted)}
 
 /* ── Mobile menu ── */
-.menu-btn{display:none;background:none;border:none;color:var(--text);font-size:20px;cursor:pointer;padding:4px 8px;line-height:1}
+.menu-btn{display:none;background:none;border:none;color:var(--text);cursor:pointer;padding:6px;line-height:0;border-radius:6px;flex-shrink:0;min-width:36px;min-height:36px;align-items:center;justify-content:center}
+.menu-btn:hover{background:var(--surface2)}
+.menu-btn svg{display:block;width:22px;height:22px;stroke:var(--text);stroke-width:2;stroke-linecap:round}
 .sidebar-overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:199}
 .sidebar-overlay.open{display:block}
 @media(max-width:768px){
   .content{grid-template-columns:1fr}
   .sidebar{display:none;position:fixed;top:56px;left:0;bottom:0;width:240px;z-index:200;overflow-y:auto}
   .sidebar.open{display:block}
-  .menu-btn{display:block}
+  .menu-btn{display:flex}
+  .topbar-clock{display:none}
   .grid-2{grid-template-columns:1fr}
   .grid-3{grid-template-columns:1fr}
 }
@@ -416,7 +419,13 @@ input[type=text]:focus,input[type=time]:focus,select:focus{border-color:var(--ac
 
 <!-- ── Topbar ── -->
 <header class="topbar">
-  <button class="menu-btn" onclick="toggleMenu()" aria-label="Menú">☰</button>
+  <button class="menu-btn" onclick="toggleMenu()" aria-label="Menú">
+    <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+      <line x1="3" y1="6"  x2="21" y2="6"/>
+      <line x1="3" y1="12" x2="21" y2="12"/>
+      <line x1="3" y1="18" x2="21" y2="18"/>
+    </svg>
+  </button>
   <span class="topbar-logo">🤖</span>
   <span class="topbar-title">Bot Nahuel</span>
   <span class="topbar-badge badge-on" id="status-badge">● Online</span>
