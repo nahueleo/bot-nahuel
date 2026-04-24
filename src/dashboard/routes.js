@@ -68,18 +68,24 @@ router.get('/api/metrics', async (req, res) => {
 // ─── API: eventos del calendario ──────────────────────────────────────────────
 router.get('/api/calendar-events', async (req, res) => {
   try {
-    const { account, calendar, days = 7 } = req.query;
+    const { account, calendar } = req.query;
+    let days = parseInt(req.query.days, 10);
+    if (Number.isNaN(days) || days <= 0) days = 7;
+
     if (!account || !calendar) {
       return res.status(400).json({ error: 'Se requieren account y calendar' });
     }
 
     const start = new Date();
-    const end = new Date(start.getTime() + parseInt(days) * 24 * 60 * 60 * 1000);
+    const end = new Date(start.getTime() + days * 24 * 60 * 60 * 1000);
 
     const events = await getEvents(account, calendar, start.toISOString(), end.toISOString());
     res.json({ events });
   } catch (err) {
-    res.status(500).json({ error: 'Error obteniendo eventos del calendario' });
+    console.error('[dashboard] Error obteniendo eventos del calendario:', err.message || err.code || err);
+    const message = err.message || 'Error obteniendo eventos del calendario';
+    const statusCode = message.includes('no conectada') ? 400 : 500;
+    res.status(statusCode).json({ error: message });
   }
 });
 

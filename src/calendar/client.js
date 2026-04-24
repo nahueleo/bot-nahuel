@@ -6,7 +6,11 @@ import { getAuthClient, listConnectedAccounts } from '../auth/google.js';
  */
 async function getCalendarClient(accountName) {
   const auth = await getAuthClient(accountName);
-  if (!auth) throw new Error(`Cuenta "${accountName}" no conectada. Abrí /auth/google?account=${accountName}`);
+  if (!auth) {
+    const message = `Cuenta "${accountName}" no conectada. Abrí /auth/google?account=${accountName}`;
+    console.error('[calendar] Error de autenticación:', message);
+    throw new Error(message);
+  }
   return google.calendar({ version: 'v3', auth });
 }
 
