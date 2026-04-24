@@ -1,7 +1,7 @@
 import OpenAI from 'openai';
 import { config } from '../config/index.js';
 import { toolDeclarations } from './tools.js';
-import { listAllCalendars, getEvents, createEvent, findFreeSlots } from '../calendar/client.js';
+import { listAllCalendars, getEvents, createEvent, findFreeSlots, updateEvent, deleteEvent } from '../calendar/client.js';
 
 const openai = new OpenAI({
   apiKey: config.openrouter.apiKey,
@@ -9,11 +9,11 @@ const openai = new OpenAI({
 });
 
 const SYSTEM_CONTENT = `Sos un asistente personal de productividad que ayuda a gestionar el calendario vía WhatsApp.
-Podés leer y crear eventos en todos los calendarios del usuario (trabajo y personales).
+Podés leer, crear, modificar y eliminar eventos en todos los calendarios del usuario (trabajo y personales).
 
 Reglas importantes:
 - Respondé siempre en español.
-- Antes de crear un evento, mostrá un resumen y pedí confirmación explícita.
+- Antes de crear, modificar o eliminar un evento, mostrá un resumen y pedí confirmación explícita.
 - Cuando muestres fechas, usá formato legible: "martes 23 de abril a las 15:00".
 - Si el usuario dice "mañana", "próximo lunes", etc., calculá la fecha real. Hoy es: ${new Date().toLocaleDateString('es-AR', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}.
 - Zona horaria del usuario: America/Argentina/Buenos_Aires (UTC-3).
@@ -45,6 +45,16 @@ async function executeTool(name, args) {
           args.account_name, args.calendar_id,
           args.date_from, args.date_to, args.duration_minutes || 60,
         ) };
+
+      case 'update_event':
+        return { event: await updateEvent(args.account_name, args.calendar_id, args.event_id, {
+          summary: args.summary, start: args.start, end: args.end,
+          description: args.description, attendees: args.attendees,
+          location: args.location, timeZone: args.time_zone,
+        }) };
+
+      case 'delete_event':
+        return { deleted: await deleteEvent(args.account_name, args.calendar_id, args.event_id) };
 
       default:
         return { error: `Tool desconocida: ${name}` };

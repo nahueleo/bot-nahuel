@@ -95,4 +95,53 @@ export const toolDeclarations = [
       },
     },
   },
+
+  {
+    type: 'function',
+    function: {
+      name: 'update_event',
+      description:
+        'Modifica un evento existente en un calendario. ' +
+        'Usar cuando el usuario quiere cambiar fecha, hora, título, invitados, etc.',
+      parameters: {
+        type: 'object',
+        properties: {
+          account_name: { type: 'string', description: 'Nombre de la cuenta.' },
+          calendar_id:  { type: 'string', description: 'ID del calendario.' },
+          event_id:     { type: 'string', description: 'ID del evento a modificar (obtener de get_events).' },
+          summary:      { type: 'string', description: 'Nuevo título del evento.' },
+          start:        { type: 'string', description: 'Nueva fecha/hora inicio ISO 8601.' },
+          end:          { type: 'string', description: 'Nueva fecha/hora fin ISO 8601.' },
+          description:  { type: 'string', description: 'Nueva descripción.' },
+          attendees: {
+            type: 'array',
+            items: { type: 'string' },
+            description: 'Nuevos emails de los invitados.',
+          },
+          location:  { type: 'string', description: 'Nuevo lugar del evento.' },
+          time_zone: { type: 'string', description: 'Nueva zona horaria.' },
+        },
+        required: ['account_name', 'calendar_id', 'event_id'],
+      },
+    },
+  },
+
+  {
+    type: 'function',
+    function: {
+      name: 'delete_event',
+      description:
+        'Elimina un evento de un calendario. ' +
+        'Usar cuando el usuario quiere cancelar o eliminar una reunión.',
+      parameters: {
+        type: 'object',
+        properties: {
+          account_name: { type: 'string', description: 'Nombre de la cuenta.' },
+          calendar_id:  { type: 'string', description: 'ID del calendario.' },
+          event_id:     { type: 'string', description: 'ID del evento a eliminar (obtener de get_events).' },
+        },
+        required: ['account_name', 'calendar_id', 'event_id'],
+      },
+    },
+  },
 ];

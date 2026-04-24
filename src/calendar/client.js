@@ -197,3 +197,90 @@ export async function findFreeSlots(accountName, calendarId, dateFrom, dateTo, d
   // Retornar solo los primeros 10 slots para no abrumar a Claude
   return slots.slice(0, 10);
 }
+
+/**
+ * Actualiza un evento existente en un calendario.
+ * @param {string} accountName
+ * @param {string} calendarId
+ * @param {string} eventId - ID del evento a actualizar
+ * @param {{ summary?, start?, end?, attendees?, description?, location?, timeZone? }} updateData
+ * @returns {{ id, htmlLink, summary, start, end }}
+ */
+export async function updateEvent(accountName, calendarId, eventId, updateData) {
+  const cal = await getCalendarClient(accountName);
+
+  // Obtener el evento actual primero
+  const { data: currentEvent } = await cal.events.get({
+    calendarId,
+    eventId,
+  });
+
+  // Construir el recurso actualizado
+  const resource = { ...currentEvent };
+
+  // Aplicar actualizaciones
+  if (updateData.summary !== undefined) resource.summary = updateData.summary;
+  if (updateData.description !== undefined) resource.description = updateData.description;
+  if (updateData.location !== undefined) resource.location = updateData.location;
+
+  if (updateData.start) {
+    resource.start = {
+      dateTime: new Date(updateData.start).toISOString(),
+      timeZone: updateData.timeZone || currentEvent.start?.timeZone || 'America/Argentina/Buenos_Aires',
+    };
+  }
+
+  if (updateData.end) {
+    resource.end = {
+      dateTime: new Date(updateData.end).toISOString(),
+      timeZone: updateData.timeZone || currentEvent.end?.timeZone || 'America/Argentina/Buenos_Aires',
+    };
+  }
+
+  // Actualizar invitados si se especificaron
+  if (Array.isArray(updateData.attendees)) {
+    const validEmails = updateData.attendees.filter((e) =>
+      typeof e === 'string' && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(e) && e.length < 200,
+    );
+    if (validEmails.length > 0) {
+      resource.attendees = validEmails.map((email) => ({ email }));
+    }
+  }
+
+  const { data } = await cal.events.update({
+    calendarId,
+    eventId,
+    resource,
+    sendUpdates: 'all', // envía actualizaciones a los attendees
+  });
+
+  console.log(`[calendar] Evento actualizado en "${accountName}/${calendarId}": ${data.id}`);
+
+  return {
+    id:      data.id,
+    htmlLink: data.htmlLink,
+    summary: data.summary,
+    start:   data.start?.dateTime || data.start?.date,
+    end:     data.end?.dateTime   || data.end?.date,
+  };
+}
+
+/**
+ * Elimina un evento de un calendario.
+ * @param {string} accountName
+ * @param {string} calendarId
+ * @param {string} eventId - ID del evento a eliminar
+ * @returns {boolean} true si se eliminó exitosamente
+ */
+export async function deleteEvent(accountName, calendarId, eventId) {
+  const cal = await getCalendarClient(accountName);
+
+  await cal.events.delete({
+    calendarId,
+    eventId,
+    sendUpdates: 'all', // envía cancelaciones a los attendees
+  });
+
+  console.log(`[calendar] Evento eliminado de "${accountName}/${calendarId}": ${eventId}`);
+  return true;
+}
