@@ -4,24 +4,34 @@ Bot de WhatsApp inteligente que gestiona tu calendario de Google Calendar usando
 
 ## Funcionalidades
 
-### ✅ Crear eventos
-- Agenda reuniones y citas nuevas
-- Busca horarios disponibles automáticamente
-- Envía invitaciones a participantes
+### ✅ Gestión Completa de Eventos
+- **Crear eventos** únicos o recurrentes
+- **Ver eventos** por fecha o búsqueda inteligente
+- **Editar eventos** existentes (fecha, hora, título, invitados)
+- **Eliminar eventos** del calendario
 
-### ✅ Ver agenda
-- Consulta tus eventos por fecha
-- Lista reuniones programadas
-- Muestra detalles completos
+### 🔄 Eventos Recurrentes
+- Reuniones semanales/mensuales/diarias
+- Standups diarios, revisiones mensuales
+- Control de frecuencia e intervalo
 
-### ✅ Editar eventos
-- Modifica fecha, hora y título
-- Actualiza invitados y ubicación
-- Cambia descripción del evento
+### 🔍 Búsqueda Inteligente
+- Buscar por palabras clave en título/descripción
+- "Muéstrame reuniones con Juan"
+- "Eventos sobre presupuesto"
 
-### ✅ Eliminar eventos
-- Cancela reuniones existentes
-- Envía notificaciones de cancelación
+### ⏰ Recordatorios Automáticos
+- Recordatorios programables por WhatsApp
+- "Recuérdame 15min antes de la reunión"
+- Procesamiento automático cada minuto
+
+### 📋 Plantillas Predefinidas
+- **standup**: Daily standup (30min)
+- **reunion_equipo**: Reunión semanal (60min)
+- **revision_mensual**: Revisión mensual (90min)
+- **entrevista**: Entrevista (60min)
+- **presentacion**: Presentación (45min)
+- **capacitacion**: Capacitación (120min)
 
 ## Cómo usar
 
@@ -34,9 +44,12 @@ http://localhost:3000/auth/google?account=personal
 ### 2. Chatear con el bot
 Envía mensajes naturales como:
 - "Agendame una reunión mañana a las 3pm"
+- "Crea un standup todos los lunes a las 10am"
 - "¿Qué tengo programado hoy?"
+- "Muéstrame reuniones con presupuesto"
 - "Cambia la reunión de mañana a las 4pm"
-- "Cancela la reunión con Juan"
+- "Cancela la reunión del viernes"
+- "Recuérdame 15min antes de la reunión con Juan"
 
 ### 3. Comandos especiales
 - `reset` - Limpia el historial de conversación
@@ -47,7 +60,7 @@ Envía mensajes naturales como:
 - **OpenRouter** (Claude-3-Haiku)
 - **Google Calendar API**
 - **WhatsApp Cloud API**
-- **Redis** para persistencia
+- **Redis** para persistencia y recordatorios automáticos
 - **Railway** para deployment
 
 ## Deploy
