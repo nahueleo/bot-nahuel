@@ -1,6 +1,20 @@
 import dotenv from 'dotenv';
 dotenv.config();
 
+// DEBUG: Log de variables disponibles
+console.log('[config] NODE_ENV:', process.env.NODE_ENV);
+console.log('[config] Variables de entorno disponibles:');
+const envKeys = Object.keys(process.env)
+  .filter(k => !k.includes('PATH') && !k.includes('npm') && k.length < 50)
+  .sort();
+console.log(envKeys);
+
+console.log('[config] DEBUG - Verificando variables WhatsApp:');
+console.log('  WHATSAPP_ACCESS_TOKEN exists:', !!process.env.WHATSAPP_ACCESS_TOKEN);
+console.log('  WHATSAPP_PHONE_NUMBER_ID:', process.env.WHATSAPP_PHONE_NUMBER_ID);
+console.log('  WHATSAPP_VERIFY_TOKEN:', process.env.WHATSAPP_VERIFY_TOKEN);
+console.log('  WHATSAPP_APP_SECRET exists:', !!process.env.WHATSAPP_APP_SECRET);
+
 /**
  * Obtiene una variable de entorno requerida.
  * En producción falla si falta. En desarrollo, usa valor vacío y advierte.
