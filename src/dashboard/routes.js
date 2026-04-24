@@ -583,10 +583,35 @@ input[type=text]:focus,input[type=time]:focus,select:focus{border-color:var(--ac
 
 <!-- ════════════════════ TAB: CALENDARIO ════════════════════ -->
 <div class="tab-content" id="tab-calendar">
-  <h2 style="font-size:18px;font-weight:700;color:#f1f5f9;margin-bottom:20px">📅 Calendario</h2>
+  <h2 style="font-size:18px;font-weight:700;color:#f1f5f9;margin-bottom:16px">📅 Calendario</h2>
+
+  <!-- Filtros -->
+  <div class="card" style="margin-bottom:16px">
+    <div style="display:flex;gap:12px;align-items:flex-end;flex-wrap:wrap">
+      <div class="field" style="margin:0;flex:1;min-width:140px">
+        <label>Cuenta</label>
+        <select id="cal-account-sel" onchange="loadCalendar()">
+          <option value="">Cargando...</option>
+        </select>
+      </div>
+      <div class="field" style="margin:0;flex:1;min-width:140px">
+        <label>Período</label>
+        <select id="cal-days-sel" onchange="loadCalendar()">
+          <option value="1">Hoy</option>
+          <option value="3">Próximos 3 días</option>
+          <option value="7" selected>Próximos 7 días</option>
+          <option value="14">Próximas 2 semanas</option>
+          <option value="30">Próximo mes</option>
+          <option value="90">Próximos 3 meses</option>
+        </select>
+      </div>
+      <button class="btn btn-ghost" style="margin-bottom:0" onclick="loadCalendar()">↻ Actualizar</button>
+    </div>
+  </div>
+
   <div class="grid-2">
     <div class="card">
-      <div class="card-title">📅 <span>Próximos eventos (7 días)</span></div>
+      <div class="card-title">📅 <span id="cal-events-title">Próximos eventos</span></div>
       <div id="cal-events-list"><div class="empty">Cargando...</div></div>
     </div>
     <div class="card">
@@ -634,6 +659,16 @@ function fmtTime(iso) {
 function fmtUptime(s) {
   const h = Math.floor(s/3600), m = Math.floor((s%3600)/60), sec = s%60;
   return h > 0 ? h+'h '+m+'m' : m > 0 ? m+'m '+sec+'s' : sec+'s';
+}
+// fmtEvent: handles both "2026-04-23T10:00:00-03:00" (timed) and "2026-04-23" (all-day)
+function fmtEvent(dt) {
+  if (!dt) return 'Sin fecha';
+  if (dt.includes('T')) {
+    const d = new Date(dt);
+    return d.toLocaleString('es-AR', { weekday:'short', day:'2-digit', month:'2-digit', hour:'2-digit', minute:'2-digit', hour12:false });
+  }
+  const [y, mo, d] = dt.split('-').map(Number);
+  return new Date(y, mo - 1, d).toLocaleDateString('es-AR', { weekday:'short', day:'2-digit', month:'2-digit' }) + ' · Todo el día';
 }
 function showToast(msg, ok = true) {
   const t = document.getElementById('toast');
@@ -731,11 +766,15 @@ async function loadStatus() {
       (d.accounts||[]).map(a => '<option value="' + a + '">' + a + '</option>').join('');
     if (curVal) sel.value = curVal;
 
-    // Messages preview on overview
+    // Messages — populate both overview preview and full messages tab
     if (d.messages?.length) {
-      const el = document.getElementById('overview-msgs');
-      el.innerHTML = '';
-      d.messages.slice(0, 5).forEach(m => el.appendChild(msgCard(m)));
+      const ovEl = document.getElementById('overview-msgs');
+      if (ovEl) { ovEl.innerHTML = ''; d.messages.slice(0, 5).forEach(m => ovEl.appendChild(msgCard(m))); }
+      const allEl = document.getElementById('all-msgs');
+      if (allEl && allEl.querySelector('.empty')) {
+        allEl.innerHTML = '';
+        d.messages.slice(0, 50).forEach(m => allEl.appendChild(msgCard(m)));
+      }
     }
   } catch {
     document.getElementById('status-badge').textContent = '● Offline';
@@ -764,12 +803,12 @@ async function loadCalendar() {
     const renderEvents = (el, max) => {
       if (!events.length) { el.innerHTML = '<div class="empty">Sin eventos próximos</div>'; return; }
       el.innerHTML = events.slice(0, max).map(e => {
-        const dt = e.start?.dateTime || e.start?.date;
+        // e.start is already a string (dateTime or date-only) from the API
         return '<div class="list-item">' +
           '<div class="list-icon li-blue">📅</div>' +
           '<div class="list-content">' +
             '<div class="list-title">' + (e.summary || 'Sin título') + '</div>' +
-            '<div class="list-meta">' + fmt(dt) + '</div>' +
+            '<div class="list-meta">' + fmtEvent(e.start) + '</div>' +
           '</div>' +
         '</div>';
       }).join('');

@@ -8,11 +8,16 @@ const MAX_HISTORY_MESSAGES = 20;
  * so tool_use/tool_result pairs are never split across the cut boundary.
  */
 function trimHistory(history) {
-  if (history.length <= MAX_HISTORY_MESSAGES) return history;
-  const trimmed = history.slice(-MAX_HISTORY_MESSAGES);
+  const trimmed = history.length > MAX_HISTORY_MESSAGES
+    ? history.slice(-MAX_HISTORY_MESSAGES)
+    : [...history];
+  // Always ensure history starts at a user message to avoid orphaned tool_result blocks
+  // at the beginning (happens when the trim boundary cuts the preceding assistant+tool_calls).
   const firstUser = trimmed.findIndex(m => m.role === 'user');
   const result = firstUser > 0 ? trimmed.slice(firstUser) : trimmed;
-  console.log(`[store] trimHistory: ${history.length} → ${result.length} msgs (firstUser=${firstUser})`);
+  if (result.length !== history.length) {
+    console.log(`[store] trimHistory: ${history.length} → ${result.length} msgs (firstUser=${firstUser})`);
+  }
   return result;
 }
 

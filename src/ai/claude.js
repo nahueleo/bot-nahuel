@@ -185,6 +185,15 @@ async function executeTool(name, args) {
 function sanitizeHistory(history) {
   let arr = [...history];
   const before = arr.length;
+
+  // Strip leading non-user messages: happens when trimHistory cut the assistant(tool_calls)
+  // off the front, leaving an orphaned tool_result as the first message.
+  while (arr.length > 0 && arr[0].role !== 'user') {
+    arr.shift();
+  }
+
+  // Strip trailing incomplete agentic turns: tool results without a following assistant
+  // response (MAX_LOOPS scenario), or assistant with unresolved tool_calls.
   let changed = true;
   while (changed) {
     changed = false;
@@ -197,8 +206,9 @@ function sanitizeHistory(history) {
       changed = true;
     }
   }
+
   if (arr.length !== before) {
-    console.warn(`[ai:history] sanitize eliminó ${before - arr.length} mensajes incompletos (${before} → ${arr.length})`);
+    console.warn(`[ai:history] sanitize eliminó ${before - arr.length} msgs inválidos (${before} → ${arr.length})`);
   }
   return arr;
 }
