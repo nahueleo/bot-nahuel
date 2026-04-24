@@ -101,11 +101,14 @@ async function handleIncoming(body) {
 
   if (!text) return;
 
-  console.log(`[webhook] Mensaje recibido de: ${from.slice(-4).padStart(from.length, '*')}`); // ocultar número completo en logs
+  const fromTag = from.slice(-4).padStart(from.length, '*');
+  const t0 = Date.now();
+  console.log(`[webhook] Mensaje recibido de: ${fromTag}  texto="${text.slice(0, 60)}"`);
 
   // Comando de reset: limpiar historial de conversación
   if (text.toLowerCase() === 'reset' || text.toLowerCase() === 'reiniciar') {
     await clearHistory(from);
+    console.log(`[webhook] Reset historial para ${fromTag}`);
     await sendWhatsAppMessage(from, '✅ Historial limpiado. ¡Empezamos de cero!');
     return;
   }
@@ -120,7 +123,7 @@ async function handleIncoming(body) {
   try {
     ({ reply, updatedHistory } = await processMessage(text, history));
   } catch (err) {
-    console.error('[webhook] Error generando respuesta:', err.message || err.code || err);
+    console.error(`[webhook] Error generando respuesta (${Date.now() - t0}ms):`, err.message || err.code || err);
     if (err.error) {
       console.error('[webhook] Detalle OpenAI error:', JSON.stringify(err.error).slice(0, 1000));
     }
@@ -136,11 +139,14 @@ async function handleIncoming(body) {
 
     const fallbackMessage = isRateLimitError
       ? 'Estoy recibiendo muchos pedidos del servicio de IA en este momento. Probá de nuevo en unos minutos, por favor.'
-      : 'Hubo un error al procesar tu mensaje. Intentá nuevamente en unos instantes.' + errorText.slice(0, 100);
+      : 'Hubo un error al procesar tu mensaje. Intentá nuevamente en unos instantes.';
 
+    console.log(`[webhook] Enviando fallback de error a ${fromTag}`);
     await sendWhatsAppMessage(from, fallbackMessage);
     return;
   }
+
+  console.log(`[webhook] Respuesta generada en ${Date.now() - t0}ms  largo=${reply.length} chars`);
 
   // Guardar el historial completo de forma atómica para evitar cortes en pares tool_use/tool_result
   await setHistory(from, updatedHistory);
@@ -158,12 +164,15 @@ async function handleIncoming(body) {
   // WhatsApp tiene límite de ~4096 caracteres por mensaje
   if (reply.length > 4000) {
     const chunks = splitMessage(reply, 4000);
+    console.log(`[webhook] Enviando respuesta en ${chunks.length} partes a ${fromTag}`);
     for (const chunk of chunks) {
       await sendWhatsAppMessage(from, chunk);
     }
   } else {
+    console.log(`[webhook] Enviando respuesta a ${fromTag}`);
     await sendWhatsAppMessage(from, reply);
   }
+  console.log(`[webhook] Flujo completo en ${Date.now() - t0}ms`);
 }
 
 /**

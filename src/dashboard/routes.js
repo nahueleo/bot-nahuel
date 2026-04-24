@@ -7,6 +7,8 @@ import { getTasksConfig, updateTask, getTaskLog } from '../redis/tasks.js';
 import { listAllCalendars, getEvents } from '../calendar/client.js';
 import { runMorningBriefing } from '../tasks/morning-briefing.js';
 import { syncScheduler } from '../tasks/scheduler.js';
+import { searchEmails, getUnreadCount, markAsRead } from '../gmail/client.js';
+import { getTasks, completeTask, deleteTask } from '../tasks/client.js';
 
 const router = Router();
 const startTime = Date.now();
@@ -81,6 +83,88 @@ router.get('/api/calendar-events', async (req, res) => {
     res.json({ events });
   } catch (err) {
     res.status(err.message?.includes('no conectada') ? 400 : 500).json({ error: err.message });
+  }
+});
+
+// ─── API: gmail unread ────────────────────────────────────────────────────────
+router.get('/api/gmail/unread', async (req, res) => {
+  try {
+    const accounts = await listConnectedAccounts();
+    const results = await Promise.all(
+      accounts.map(async (account) => {
+        try {
+          const data = await getUnreadCount(account);
+          return { account, ...data };
+        } catch {
+          return { account, unreadCount: 0, error: true };
+        }
+      }),
+    );
+    const total = results.reduce((s, r) => s + (r.unreadCount || 0), 0);
+    res.json({ total, accounts: results });
+  } catch {
+    res.status(500).json({ error: 'Error obteniendo emails' });
+  }
+});
+
+// ─── API: gmail emails ────────────────────────────────────────────────────────
+router.get('/api/gmail/emails', async (req, res) => {
+  try {
+    const { account, query = 'in:inbox', max = '10' } = req.query;
+    if (!account) return res.status(400).json({ error: 'Se requiere account' });
+    const emails = await searchEmails(account, query, parseInt(max, 10));
+    res.json({ emails });
+  } catch (err) {
+    res.status(err.message?.includes('no conectada') ? 400 : 500).json({ error: err.message });
+  }
+});
+
+// ─── API: gmail mark read ─────────────────────────────────────────────────────
+router.post('/api/gmail/mark-read', async (req, res) => {
+  try {
+    const { account, messageId } = req.body;
+    if (!account || !messageId) return res.status(400).json({ error: 'Se requieren account y messageId' });
+    await markAsRead(account, messageId);
+    res.json({ ok: true });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ─── API: gtasks ──────────────────────────────────────────────────────────────
+router.get('/api/gtasks', async (req, res) => {
+  try {
+    const { account, taskListId = '@default' } = req.query;
+    if (!account) return res.status(400).json({ error: 'Se requiere account' });
+    const tasks = await getTasks(account, taskListId, false);
+    res.json({ tasks });
+  } catch (err) {
+    res.status(err.message?.includes('no conectada') ? 400 : 500).json({ error: err.message });
+  }
+});
+
+// ─── API: gtasks complete ─────────────────────────────────────────────────────
+router.post('/api/gtasks/complete', async (req, res) => {
+  try {
+    const { account, taskId, taskListId = '@default' } = req.body;
+    if (!account || !taskId) return res.status(400).json({ error: 'Se requieren account y taskId' });
+    const result = await completeTask(account, taskListId, taskId);
+    res.json({ ok: true, task: result });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ─── API: gtasks delete ───────────────────────────────────────────────────────
+router.delete('/api/gtasks/:taskId', async (req, res) => {
+  try {
+    const { taskId } = req.params;
+    const { account, taskListId = '@default' } = req.query;
+    if (!account) return res.status(400).json({ error: 'Se requiere account' });
+    await deleteTask(account, taskListId, taskId);
+    res.json({ ok: true });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
   }
 });
 

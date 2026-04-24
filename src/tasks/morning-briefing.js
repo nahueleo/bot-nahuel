@@ -15,8 +15,9 @@ function formatDateES(date) {
 }
 
 function formatEventTime(event) {
-  if (event.start?.dateTime) {
-    const d = new Date(event.start.dateTime);
+  // event.start is already a string: "2026-04-23T10:00:00-03:00" (timed) or "2026-04-23" (all-day)
+  if (event.start && event.start.includes('T')) {
+    const d = new Date(event.start);
     return d.toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit', hour12: false });
   }
   return 'Todo el día';
