@@ -416,11 +416,13 @@ input[type=text]:focus,input[type=time]:focus,select:focus{border-color:var(--ac
 
 <!-- ── Topbar ── -->
 <header class="topbar">
+  <button class="menu-btn" onclick="toggleMenu()" aria-label="Menú">☰</button>
   <span class="topbar-logo">🤖</span>
   <span class="topbar-title">Bot Nahuel</span>
   <span class="topbar-badge badge-on" id="status-badge">● Online</span>
   <span class="topbar-clock" id="clock">--:--:--</span>
 </header>
+<div class="sidebar-overlay" id="sidebar-overlay" onclick="closeMenu()"></div>
 
 <div class="content">
 
@@ -788,8 +790,20 @@ function goToTab(id) {
   if (id === 'gtasks') loadGTasks();
 }
 document.querySelectorAll('.nav-item[data-tab]').forEach(el => {
-  el.addEventListener('click', () => goToTab(el.dataset.tab));
+  el.addEventListener('click', () => { goToTab(el.dataset.tab); closeMenu(); });
 });
+
+// ── Mobile menu ───────────────────────────────────────────────────────────
+function toggleMenu() {
+  const sidebar = document.querySelector('.sidebar');
+  const overlay = document.getElementById('sidebar-overlay');
+  const open = sidebar.classList.toggle('open');
+  overlay.classList.toggle('open', open);
+}
+function closeMenu() {
+  document.querySelector('.sidebar').classList.remove('open');
+  document.getElementById('sidebar-overlay').classList.remove('open');
+}
 
 // ── Clock ──────────────────────────────────────────────────────────────────
 setInterval(() => {
