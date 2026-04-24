@@ -3,6 +3,7 @@ import { config } from './config/index.js';
 import { getRedisClient } from './redis/client.js';
 import { startReminderProcessor } from './redis/reminder-processor.js';
 import { startScheduler } from './tasks/scheduler.js';
+import { keyManager } from './ai/key-manager.js';
 import authRouter from './auth/google.js';
 import webhookRouter from './whatsapp/webhook.js';
 import dashboardRouter from './dashboard/routes.js';

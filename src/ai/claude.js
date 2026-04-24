@@ -1,5 +1,4 @@
-import OpenAI from 'openai';
-import { config } from '../config/index.js';
+import { keyManager } from './key-manager.js';
 import { toolDeclarations } from './tools.js';
 import { listAllCalendars, getEvents, createEvent, findFreeSlots, updateEvent, deleteEvent, createRecurringEvent, searchEvents } from '../calendar/client.js';
 import { scheduleReminder } from '../redis/reminders.js';
@@ -7,53 +6,6 @@ import { getTemplate, listTemplates } from '../calendar/templates.js';
 import { searchEmails, getEmail, markAsRead, trashEmail, getUnreadCount } from '../gmail/client.js';
 import { listTaskLists, getTasks, createTask, updateTask, completeTask, deleteTask } from '../tasks/client.js';
 
-// ─── Key rotation ────────────────────────────────────────────────────────────
-const _clients = config.openrouter.apiKeys.map(
-  apiKey => new OpenAI({ apiKey, baseURL: 'https://openrouter.ai/api/v1' }),
-);
-let _keyIndex = 0;
-console.log(`[ai:keys] ${_clients.length} API key(s) cargada(s) para OpenRouter`);
-
-function _currentClient() {
-  return _clients[_keyIndex];
-}
-
-function _advanceKey() {
-  _keyIndex = (_keyIndex + 1) % _clients.length;
-}
-
-/**
- * Wrapper sobre chat.completions.create con rotación de keys.
- * - Round-robin: avanza la key en cada request exitoso.
- * - En 429: rota y reintenta con la siguiente key (hasta agotar todas).
- */
-function _isCreditsError(err) {
-  const msg = err.error?.message || err.message || '';
-  return err.status === 429 ||
-    (err.status === 402 && /insufficient credits/i.test(msg));
-}
-
-/**
- * Wrapper sobre chat.completions.create con rotación de keys.
- * - Round-robin: avanza la key en cada request exitoso.
- * - En 429 o 402 (sin créditos): rota y reintenta con la siguiente key.
- */
-async function createCompletion(params) {
-  for (let attempt = 0; attempt < _clients.length; attempt++) {
-    try {
-      const result = await _currentClient().chat.completions.create(params);
-      _advanceKey(); // distribución round-robin en éxito
-      return result;
-    } catch (err) {
-      if (_isCreditsError(err)) {
-        console.warn(`[ai:keys] ${err.status} en key ${_keyIndex + 1}/${_clients.length}. Rotando...`);
-        _advanceKey();
-        if (attempt < _clients.length - 1) continue;
-      }
-      throw err;
-    }
-  }
-}
 
 function buildSystemContent() {
   const nowART = new Date().toLocaleString('es-AR', {

@@ -52,14 +52,16 @@ export const config = {
   },
 
   groq: {
-    apiKey: required('GROQ_API_KEY'),
+    apiKey:  (process.env.GROQ_API_KEY || '').split(',')[0].trim(), // backward compat
+    apiKeys: (process.env.GROQ_API_KEY || '').split(',').map(k => k.trim()).filter(Boolean),
   },
 
   openrouter: {
-    apiKeys: required('OPENROUTER_API_KEY', true)
-      .split(',')
-      .map(k => k.trim())
-      .filter(Boolean),
+    apiKeys: (process.env.OPENROUTER_API_KEY || '').split(',').map(k => k.trim()).filter(Boolean),
+  },
+
+  gemini: {
+    apiKeys: (process.env.GEMINI_API_KEY || '').split(',').map(k => k.trim()).filter(Boolean),
   },
 
   redis: {
