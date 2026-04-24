@@ -28,10 +28,11 @@ function buildKeys() {
     const apiKeys = config[provider]?.apiKeys ?? [];
     for (let i = 0; i < apiKeys.length; i++) {
       keys.push({
-        id:     `${provider}_${i}`,
+        id:             `${provider}_${i}`,
         provider,
-        model:  cfg.model,
-        client: new OpenAI({ apiKey: apiKeys[i], baseURL: cfg.baseURL }),
+        model:          cfg.model,
+        supportsImages: cfg.supportsImages ?? false,
+        client:         new OpenAI({ apiKey: apiKeys[i], baseURL: cfg.baseURL }),
       });
     }
   }
@@ -158,6 +159,9 @@ class KeyManager {
           // continuar con la siguiente key
         } else if (err.status === 429) {
           console.warn(`[key-manager] 429 en ${key.id}. Rotando sin deshabilitar...`);
+          // continuar con la siguiente key
+        } else if (err.status === 404) {
+          console.warn(`[key-manager] 404 en ${key.id} (endpoint o modelo no encontrado). Rotando sin deshabilitar...`);
           // continuar con la siguiente key
         } else {
           throw err; // error de red, 5xx, etc. — no rotar
