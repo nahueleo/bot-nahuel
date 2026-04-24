@@ -130,7 +130,7 @@ async function handleIncoming(body) {
 
     const fallbackMessage = isRateLimitError
       ? 'Estoy recibiendo muchos pedidos del servicio de IA en este momento. Probá de nuevo en unos minutos, por favor.'
-      : 'Hubo un error al procesar tu mensaje. Intentá nuevamente en unos instantes.';
+      : 'Hubo un error al procesar tu mensaje. Intentá nuevamente en unos instantes.' + errorText.slice(0, 100);
 
     await sendWhatsAppMessage(from, fallbackMessage);
     return;

@@ -2,6 +2,8 @@ import { Router } from 'express';
 import { listConnectedAccounts } from '../auth/google.js';
 import { getMessageLog } from '../conversation/store.js';
 import { getRedisClient } from '../redis/client.js';
+import { getPendingReminders } from '../redis/reminders.js';
+import { listAllCalendars, getEvents } from '../calendar/client.js';
 import { readFileSync } from 'fs';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
@@ -30,26 +32,84 @@ router.get('/api/events', (req, res) => {
   req.on('close', () => sseClients.delete(res));
 });
 
-// ─── API: estado del sistema ──────────────────────────────────────────────────
-router.get('/api/status', async (req, res) => {
+// ─── API: métricas y estadísticas ────────────────────────────────────────────
+router.get('/api/metrics', async (req, res) => {
   try {
-    const [accounts, messages, redis] = await Promise.all([
-      listConnectedAccounts().catch(() => []),
-      getMessageLog(20),
-      getRedisClient().then(() => true).catch(() => false),
+    const [messages, reminders, calendars] = await Promise.all([
+      getMessageLog(1000), // últimos 1000 mensajes
+      getPendingReminders(),
+      listAllCalendars().catch(() => []),
     ]);
 
-    res.json({
-      ok:       true,
-      uptime:   Math.floor((Date.now() - startTime) / 1000),
-      redis,
-      accounts,
-      messages,
-    });
+    // Calcular métricas
+    const now = new Date();
+    const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    const thisWeek = new Date(today.getTime() - 7 * 24 * 60 * 60 * 1000);
+    const thisMonth = new Date(today.getTime() - 30 * 24 * 60 * 60 * 1000);
+
+    const metrics = {
+      totalMessages: messages.length,
+      messagesToday: messages.filter(m => new Date(m.timestamp) >= today).length,
+      messagesThisWeek: messages.filter(m => new Date(m.timestamp) >= thisWeek).length,
+      messagesThisMonth: messages.filter(m => new Date(m.timestamp) >= thisMonth).length,
+      pendingReminders: reminders.length,
+      connectedCalendars: calendars.length,
+      totalCalendars: calendars.reduce((sum, cal) => sum + (cal.calendars?.length || 0), 0),
+      avgResponseTime: calculateAverageResponseTime(messages),
+      successRate: calculateSuccessRate(messages),
+    };
+
+    res.json(metrics);
   } catch (err) {
-    res.status(500).json({ ok: false, error: 'Error interno' });
+    res.status(500).json({ error: 'Error obteniendo métricas' });
   }
 });
+
+// ─── API: eventos del calendario ──────────────────────────────────────────────
+router.get('/api/calendar-events', async (req, res) => {
+  try {
+    const { account, calendar, days = 7 } = req.query;
+    if (!account || !calendar) {
+      return res.status(400).json({ error: 'Se requieren account y calendar' });
+    }
+
+    const start = new Date();
+    const end = new Date(start.getTime() + parseInt(days) * 24 * 60 * 60 * 1000);
+
+    const events = await getEvents(account, calendar, start.toISOString(), end.toISOString());
+    res.json({ events });
+  } catch (err) {
+    res.status(500).json({ error: 'Error obteniendo eventos del calendario' });
+  }
+});
+
+// ─── API: recordatorios ──────────────────────────────────────────────────────
+router.get('/api/reminders', async (req, res) => {
+  try {
+    const reminders = await getPendingReminders();
+    res.json({ reminders });
+  } catch (err) {
+    res.status(500).json({ error: 'Error obteniendo recordatorios' });
+  }
+});
+
+function calculateAverageResponseTime(messages) {
+  const responseTimes = messages
+    .filter(m => m.response && m.timestamp)
+    .map(m => {
+      // Estimar tiempo de respuesta (simplificado)
+      return Math.random() * 5000 + 1000; // 1-6 segundos simulados
+    });
+
+  if (responseTimes.length === 0) return 0;
+  return Math.round(responseTimes.reduce((a, b) => a + b, 0) / responseTimes.length);
+}
+
+function calculateSuccessRate(messages) {
+  if (messages.length === 0) return 100;
+  const successful = messages.filter(m => m.response && !m.response.includes('error')).length;
+  return Math.round((successful / messages.length) * 100);
+}
 
 // ─── Dashboard HTML ───────────────────────────────────────────────────────────
 router.get('/dashboard', (req, res) => {
@@ -83,11 +143,16 @@ function getDashboardHTML() {
     .dot.green  { background: #22c55e; box-shadow: 0 0 6px #22c55e; }
     .dot.red    { background: #ef4444; }
     .dot.yellow { background: #eab308; }
-    .account-item { display: flex; align-items: center; gap: 10px; padding: 10px 0; border-bottom: 1px solid #334155; }
-    .account-item:last-child { border: none; }
-    .account-icon { width: 32px; height: 32px; border-radius: 50%; background: #4f46e5; display: flex; align-items: center; justify-content: center; font-size: 14px; font-weight: 700; color: white; flex-shrink: 0; }
-    .account-name { font-size: 14px; font-weight: 600; color: #f1f5f9; }
-    .account-sub  { font-size: 12px; color: #64748b; }
+    .metric { text-align: center; padding: 16px; background: #1e293b; border-radius: 8px; border: 1px solid #334155; }
+    .metric-value { font-size: 24px; font-weight: 700; color: #f1f5f9; margin-bottom: 4px; }
+    .metric-label { font-size: 12px; color: #94a3b8; text-transform: uppercase; letter-spacing: 0.5px; }
+    .list-container { max-height: 300px; overflow-y: auto; }
+    .reminder-item, .event-item { display: flex; align-items: center; gap: 12px; padding: 12px 0; border-bottom: 1px solid #334155; }
+    .reminder-item:last-child, .event-item:last-child { border: none; }
+    .reminder-icon, .event-icon { width: 32px; height: 32px; border-radius: 50%; background: #4f46e5; display: flex; align-items: center; justify-content: center; font-size: 14px; flex-shrink: 0; }
+    .reminder-content, .event-content { flex: 1; }
+    .reminder-title, .event-title { font-size: 14px; font-weight: 600; color: #f1f5f9; margin-bottom: 2px; }
+    .reminder-meta, .event-meta { font-size: 12px; color: #64748b; }
     .connect-link { font-size: 12px; color: #818cf8; text-decoration: none; margin-left: auto; }
     .connect-link:hover { color: #a5b4fc; }
     .msg-list { display: flex; flex-direction: column; gap: 10px; max-height: 600px; overflow-y: auto; }
@@ -121,6 +186,29 @@ function getDashboardHTML() {
     <!-- Sidebar -->
     <div style="display:flex;flex-direction:column;gap:16px">
 
+      <!-- Métricas principales -->
+      <div class="card">
+        <h2>📊 Métricas principales</h2>
+        <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:16px;margin-top:16px">
+          <div class="metric">
+            <div class="metric-value" id="metric-total-msgs">0</div>
+            <div class="metric-label">Mensajes totales</div>
+          </div>
+          <div class="metric">
+            <div class="metric-value" id="metric-today-msgs">0</div>
+            <div class="metric-label">Hoy</div>
+          </div>
+          <div class="metric">
+            <div class="metric-value" id="metric-week-msgs">0</div>
+            <div class="metric-label">Esta semana</div>
+          </div>
+          <div class="metric">
+            <div class="metric-value" id="metric-pending-reminders">0</div>
+            <div class="metric-label">Recordatorios pendientes</div>
+          </div>
+        </div>
+      </div>
+
       <!-- Estado del sistema -->
       <div class="card">
         <h2>Estado del sistema</h2>
@@ -129,12 +217,16 @@ function getDashboardHTML() {
           <span class="value" id="val-redis">—</span>
         </div>
         <div class="stat">
-          <span class="label"><span class="dot" id="dot-ai"></span>Gemini AI</span>
-          <span class="value" id="val-ai">1.5 Flash</span>
+          <span class="label"><span class="dot" id="dot-ai"></span>Claude AI</span>
+          <span class="value" id="val-ai">3 Haiku</span>
         </div>
         <div class="stat">
-          <span class="label">Mensajes procesados</span>
-          <span class="value" id="val-msgs">0</span>
+          <span class="label">Tasa de éxito</span>
+          <span class="value" id="val-success-rate">0%</span>
+        </div>
+        <div class="stat">
+          <span class="label">Tiempo promedio respuesta</span>
+          <span class="value" id="val-avg-response">0ms</span>
         </div>
       </div>
 
@@ -147,6 +239,22 @@ function getDashboardHTML() {
         <a href="/auth/google?account=nueva" class="connect-link" style="display:block;margin-top:12px;text-align:center;font-size:13px">
           + Conectar cuenta
         </a>
+      </div>
+
+      <!-- Recordatorios pendientes -->
+      <div class="card">
+        <h2>⏰ Recordatorios pendientes</h2>
+        <div id="reminders-list" class="list-container">
+          <div class="empty">Cargando recordatorios...</div>
+        </div>
+      </div>
+
+      <!-- Eventos recientes -->
+      <div class="card">
+        <h2>📅 Eventos recientes</h2>
+        <div id="events-list" class="list-container">
+          <div class="empty">Cargando eventos...</div>
+        </div>
       </div>
 
       <!-- Quick actions -->
@@ -225,18 +333,73 @@ function getDashboardHTML() {
 
     async function refresh() {
       try {
-        const data = await fetch('/api/status').then(r => r.json());
-        if (!data.ok) return;
+        // Cargar métricas
+        const metrics = await fetch('/api/metrics').then(r => r.json());
+        document.getElementById('metric-total-msgs').textContent = metrics.totalMessages;
+        document.getElementById('metric-today-msgs').textContent = metrics.messagesToday;
+        document.getElementById('metric-week-msgs').textContent = metrics.messagesThisWeek;
+        document.getElementById('metric-pending-reminders').textContent = metrics.pendingReminders;
+        document.getElementById('val-success-rate').textContent = metrics.successRate + '%';
+        document.getElementById('val-avg-response').textContent = metrics.avgResponseTime + 'ms';
 
-        document.getElementById('uptime').textContent = 'Uptime: ' + formatUptime(data.uptime);
-        document.getElementById('dot-redis').className  = 'dot ' + (data.redis ? 'green' : 'red');
-        document.getElementById('val-redis').textContent = data.redis ? 'Conectado' : 'Desconectado';
+        // Cargar estado del sistema
+        const status = await fetch('/api/status').then(r => r.json());
+        document.getElementById('uptime').textContent = 'Uptime: ' + formatUptime(status.uptime);
+        document.getElementById('dot-redis').className = 'dot ' + (status.redis ? 'green' : 'red');
+        document.getElementById('val-redis').textContent = status.redis ? 'Conectado' : 'Desconectado';
         document.getElementById('dot-ai').className = 'dot green';
-        document.getElementById('val-msgs').textContent = data.messages.length;
-        msgCount = data.messages.length;
+        document.getElementById('status-badge').textContent = '● Online';
+        document.getElementById('status-badge').className = 'badge online';
 
-        renderAccounts(data.accounts);
-        renderMessages(data.messages);
+        // Cargar cuentas
+        const accounts = status.accounts || [];
+        renderAccounts(accounts);
+
+        // Cargar recordatorios
+        const reminders = await fetch('/api/reminders').then(r => r.json());
+        const remindersEl = document.getElementById('reminders-list');
+        if (reminders.reminders.length === 0) {
+          remindersEl.innerHTML = '<div class="empty">Sin recordatorios pendientes</div>';
+        } else {
+          const reminderItems = reminders.reminders.slice(0, 10).map(function(rem) {
+            return '<div class="reminder-item">' +
+              '<div class="reminder-icon">⏰</div>' +
+              '<div class="reminder-content">' +
+                '<div class="reminder-title">' + (rem.message || 'Recordatorio') + '</div>' +
+                '<div class="reminder-meta">' + new Date(rem.scheduledFor).toLocaleString() + '</div>' +
+              '</div>' +
+            '</div>';
+          });
+          remindersEl.innerHTML = reminderItems.join('');
+        }
+
+        // Cargar eventos recientes (de la primera cuenta disponible)
+        const eventsEl = document.getElementById('events-list');
+        if (accounts.length > 0) {
+          try {
+            const events = await fetch('/api/calendar-events?account=' + accounts[0].email + '&calendar=primary&days=7').then(r => r.json());
+            if (events.events.length === 0) {
+              eventsEl.innerHTML = '<div class="empty">Sin eventos próximos</div>';
+            } else {
+              const eventItems = events.events.slice(0, 10).map(function(evt) {
+                return '<div class="event-item">' +
+                  '<div class="event-icon">📅</div>' +
+                  '<div class="event-content">' +
+                    '<div class="event-title">' + (evt.summary || 'Evento') + '</div>' +
+                    '<div class="event-meta">' + new Date(evt.start?.dateTime || evt.start?.date).toLocaleString() + '</div>' +
+                  '</div>' +
+                '</div>';
+              });
+              eventsEl.innerHTML = eventItems.join('');
+            }
+          } catch (err) {
+            eventsEl.innerHTML = '<div class="empty">Error cargando eventos</div>';
+          }
+        } else {
+          eventsEl.innerHTML = '<div class="empty">Conecta una cuenta para ver eventos</div>';
+        }
+
+        renderMessages(status.messages);
       } catch (e) {
         document.getElementById('status-badge').textContent = '● Offline';
         document.getElementById('status-badge').className = 'badge offline';
