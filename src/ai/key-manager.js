@@ -7,17 +7,17 @@ const REDIS_KEY = 'ai:disabled_keys';
 const PROVIDERS = {
   openrouter: {
     baseURL: 'https://openrouter.ai/api/v1',
-    model:   'anthropic/claude-3-haiku',
+    models:  ['anthropic/claude-3-haiku'],
     supportsImages: false,
   },
   groq: {
     baseURL: 'https://api.groq.com/openai/v1',
-    model:   'llama-3.3-70b-versatile',
+    models:  ['llama-3.3-70b-versatile'],
     supportsImages: false,
   },
   gemini: {
     baseURL: 'https://generativelanguage.googleapis.com/v1beta/openai/',
-    model:   'gemini-2.5-flash',
+    models:  ['gemini-2.5-flash', 'gemini-flash-lite-latest', 'gemma-3-27b-it'],
     supportsImages: true,
   },
 };
@@ -26,14 +26,17 @@ function buildKeys() {
   const keys = [];
   for (const [provider, cfg] of Object.entries(PROVIDERS)) {
     const apiKeys = config[provider]?.apiKeys ?? [];
-    for (let i = 0; i < apiKeys.length; i++) {
-      keys.push({
-        id:             `${provider}_${i}`,
-        provider,
-        model:          cfg.model,
-        supportsImages: cfg.supportsImages ?? false,
-        client:         new OpenAI({ apiKey: apiKeys[i], baseURL: cfg.baseURL }),
-      });
+    for (let ki = 0; ki < apiKeys.length; ki++) {
+      const client = new OpenAI({ apiKey: apiKeys[ki], baseURL: cfg.baseURL });
+      for (let mi = 0; mi < cfg.models.length; mi++) {
+        keys.push({
+          id:             `${provider}_k${ki}_m${mi}`,
+          provider,
+          model:          cfg.models[mi],
+          supportsImages: cfg.supportsImages ?? false,
+          client,
+        });
+      }
     }
   }
   return keys;
