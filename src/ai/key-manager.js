@@ -8,14 +8,17 @@ const PROVIDERS = {
   openrouter: {
     baseURL: 'https://openrouter.ai/api/v1',
     model:   'anthropic/claude-3-haiku',
+    supportsImages: false,
   },
   groq: {
     baseURL: 'https://api.groq.com/openai/v1',
     model:   'llama-3.3-70b-versatile',
+    supportsImages: false,
   },
   gemini: {
     baseURL: 'https://generativelanguage.googleapis.com/v1beta/openai/',
     model:   'gemini-1.5-flash',
+    supportsImages: true,
   },
 };
 
@@ -127,14 +130,23 @@ class KeyManager {
   async createCompletion(params) {
     if (!this._initialized) await this.init();
 
+    const { requireImageSupport = false, ...restParams } = params;
     const active = this._activeKeys();
     if (active.length === 0) throw new Error('No hay keys de AI activas disponibles');
 
-    for (let i = 0; i < active.length; i++) {
-      const key = active[(this._idx + i) % active.length];
+    const candidates = requireImageSupport
+      ? active.filter(k => k.supportsImages)
+      : active;
+
+    if (requireImageSupport && candidates.length === 0) {
+      throw new Error('No hay keys de AI activas que soporten entradas de imagen');
+    }
+
+    for (let i = 0; i < candidates.length; i++) {
+      const key = candidates[(this._idx + i) % candidates.length];
 
       try {
-        const result = await key.client.chat.completions.create({ ...params, model: key.model });
+        const result = await key.client.chat.completions.create({ ...restParams, model: key.model });
         // Avanzar índice para distribuir carga (round-robin)
         const nowActive = this._activeKeys();
         if (nowActive.length > 0) this._idx = (this._idx + 1) % nowActive.length;

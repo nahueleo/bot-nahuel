@@ -315,7 +315,7 @@ export async function processMessage(userMessage, history, imageContent = null) 
     ? [
         {
           type: 'image_url',
-          image_url: { url: `data:${imageContent.mimeType};base64,${imageContent.base64}` },
+          image_url: { url: imageContent.base64 },
         },
         { type: 'text', text: userMessage },
       ]
@@ -336,6 +336,7 @@ export async function processMessage(userMessage, history, imageContent = null) 
   const MAX_LOOPS = 5;
   let loops = 0;
   let currentMessages = [...messages];
+  let triedWithoutImage = false;
 
   while (loops <= MAX_LOOPS) {
     console.log(`[ai] loop ${loops}  msgs_en_contexto=${currentMessages.length}`);
@@ -348,11 +349,31 @@ export async function processMessage(userMessage, history, imageContent = null) 
         tool_choice: 'auto',
         temperature: 0.3,
         max_tokens:  1024,
+        requireImageSupport: Boolean(imageContent),
       });
     } catch (err) {
       // ── 402 token limit: reintentar con contexto mínimo ──────────────────────
       const is402 = err.status === 402 || err.error?.code === 402;
       const limitMatch = (err.error?.message || err.message || '').match(/(\d+) > (\d+)/);
+      const isImageFailure = imageContent && !triedWithoutImage && (
+        err.status === 404 ||
+        err.error?.code === 'invalid_image' ||
+        /invalid(_|-)?image|image.*unsupported|unsupported.*image/i.test(err.message || '') ||
+        /soporten entradas de imagen/i.test(err.message || '')
+      );
+
+      if (isImageFailure) {
+        triedWithoutImage = true;
+        console.warn('[ai:retry] Imagen no soportada por el proveedor actual o no hay proveedor de visión activo. Reintentando sin enviar la imagen.');
+        currentMessages = [
+          currentMessages[0],
+          ...budgetHistory,
+          { role: 'user', content: userMessage },
+        ];
+        imageContent = null;
+        continue;
+      }
+
       if (is402 && limitMatch) {
         const [, used, limit] = limitMatch;
         console.warn(`[ai:retry] 402 token limit (${used} > ${limit}). Reintentando con contexto mínimo.`);
