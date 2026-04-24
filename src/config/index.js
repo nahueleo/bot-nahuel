@@ -3,13 +3,21 @@ dotenv.config();
 
 /**
  * Obtiene una variable de entorno requerida.
- * Falla en startup si falta — mejor fallar temprano que en runtime.
+ * En producción falla si falta. En desarrollo, usa valor vacío y advierte.
  */
 function required(name) {
   const val = process.env[name];
   if (!val) {
-    console.error(`[config] Variable de entorno requerida no encontrada: ${name}`);
-    process.exit(1);
+    const isDev = process.env.NODE_ENV !== 'production';
+    const msg = `[config] Variable de entorno requerida no encontrada: ${name}`;
+    
+    if (isDev) {
+      console.warn(`${msg} (usando valor vacío en desarrollo)`);
+      return '';
+    } else {
+      console.error(msg);
+      process.exit(1);
+    }
   }
   return val;
 }
