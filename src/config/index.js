@@ -56,6 +56,10 @@ export const config = {
     apiKey: required('GROQ_API_KEY'),
   },
 
+  openrouter: {
+    apiKey: required('OPENROUTER_API_KEY'),
+  },
+
   redis: {
     url: process.env.REDIS_URL || 'redis://localhost:6379',
   },

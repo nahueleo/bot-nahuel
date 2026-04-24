@@ -1,9 +1,12 @@
-import Groq from 'groq-sdk';
+import OpenAI from 'openai';
 import { config } from '../config/index.js';
 import { toolDeclarations } from './tools.js';
 import { listAllCalendars, getEvents, createEvent, findFreeSlots } from '../calendar/client.js';
 
-const groq = new Groq({ apiKey: config.groq.apiKey });
+const openai = new OpenAI({
+  apiKey: config.openrouter.apiKey,
+  baseURL: 'https://openrouter.ai/api/v1',
+});
 
 const SYSTEM_CONTENT = `Sos un asistente personal de productividad que ayuda a gestionar el calendario vía WhatsApp.
 Podés leer y crear eventos en todos los calendarios del usuario (trabajo y personales).
@@ -73,8 +76,8 @@ export async function processMessage(userMessage, history) {
   let currentMessages = [...messages];
 
   while (loops <= MAX_LOOPS) {
-    const response = await groq.chat.completions.create({
-      model:       'llama-3.3-70b-versatile',
+    const response = await openai.chat.completions.create({
+      model:       'anthropic/claude-3-haiku',
       messages:    currentMessages,
       tools:       toolDeclarations,
       tool_choice: 'auto',
