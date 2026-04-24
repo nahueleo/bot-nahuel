@@ -12,22 +12,35 @@ const openai = new OpenAI({
   baseURL: 'https://openrouter.ai/api/v1',
 });
 
-const SYSTEM_CONTENT = `Sos un asistente personal de productividad que ayuda a gestionar el calendario vía WhatsApp.
-Podés leer, crear, modificar y eliminar eventos en todos los calendarios del usuario (trabajo y personales). También podés crear eventos recurrentes para reuniones regulares, buscar eventos por palabras clave, programar recordatorios automáticos y usar plantillas predefinidas.
+const SYSTEM_CONTENT = `Sos un asistente personal de productividad que gestiona el calendario, el correo y las tareas del usuario vía WhatsApp.
 
-Funcionalidades disponibles:
+📅 CALENDARIO:
 - Crear eventos únicos o recurrentes
-- Buscar eventos por texto (título/descripción)
-- Editar y eliminar eventos existentes
+- Ver agenda por rango de fechas
+- Editar y eliminar eventos
+- Buscar eventos por texto
 - Programar recordatorios automáticos
 - Usar plantillas: standup, reunion_equipo, revision_mensual, entrevista, presentacion, capacitacion
 
+📧 GMAIL:
+- Ver cuántos emails no leídos hay ("¿cuántos mails tengo sin leer?")
+- Buscar emails por remitente, asunto, fecha o estado
+- Leer el contenido completo de un email
+- Marcar emails como leídos
+- Mover emails a la papelera
+
+✅ GOOGLE TASKS:
+- Listar tareas pendientes y listas de tareas
+- Crear nuevas tareas (con título, notas y fecha de vencimiento opcional)
+- Actualizar tareas existentes
+- Marcar tareas como completadas
+- Eliminar tareas
+
 Reglas importantes:
 - Respondé siempre en español.
-- Antes de crear, modificar o eliminar un evento, mostrá un resumen y pedí confirmación explícita.
-- Para eventos recurrentes, preguntá por la frecuencia (diaria, semanal, mensual) y duración.
-- Ofrecé usar plantillas cuando el usuario mencione tipos comunes de reuniones.
-- Sugerí recordatorios automáticos cuando sea apropiado (ej: "te recuerdo 15min antes").
+- Antes de crear, modificar o eliminar cualquier cosa, mostrá un resumen y pedí confirmación explícita. Excepción: acciones de solo lectura (buscar, listar, leer) no necesitan confirmación.
+- Para emails: nunca expongas el cuerpo completo si es muy largo; resumí el contenido en 2-3 líneas.
+- Para tareas: si el usuario dice "anotá", "recordame", "tengo que hacer", interpretá eso como crear una tarea.
 - Cuando muestres fechas, usá formato legible: "martes 23 de abril a las 15:00".
 - Si el usuario dice "mañana", "próximo lunes", etc., calculá la fecha real. Hoy es: ${new Date().toLocaleDateString('es-AR', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}.
 - Zona horaria del usuario: America/Argentina/Buenos_Aires (UTC-3).
@@ -38,7 +51,9 @@ Reglas importantes:
  * Ejecuta la tool solicitada por el modelo.
  */
 async function executeTool(name, args) {
-  console.log(`[ai] Ejecutando tool: ${name}`);
+  const argsSummary = JSON.stringify(args).slice(0, 120);
+  console.log(`[ai:tool] → ${name}  args=${argsSummary}`);
+  const t0 = Date.now();
   try {
     switch (name) {
       case 'list_calendars':
@@ -87,6 +102,53 @@ async function executeTool(name, args) {
         await scheduleReminder(args.event_id, args.phone_number, reminderTime, args.message);
         return { scheduled: true, reminderTime: reminderTime.toISOString() };
 
+      // ─── Gmail ──────────────────────────────────────────────────────────────────
+
+      case 'search_emails':
+        return { emails: await searchEmails(args.account_name, args.query || '', args.max_results || 10) };
+
+      case 'get_email':
+        return { email: await getEmail(args.account_name, args.message_id) };
+
+      case 'mark_email_as_read':
+        return await markAsRead(args.account_name, args.message_id);
+
+      case 'get_unread_count':
+        return await getUnreadCount(args.account_name);
+
+      case 'trash_email':
+        return await trashEmail(args.account_name, args.message_id);
+
+      // ─── Google Tasks ────────────────────────────────────────────────────────────
+
+      case 'list_task_lists':
+        return { taskLists: await listTaskLists(args.account_name) };
+
+      case 'get_tasks':
+        return { tasks: await getTasks(args.account_name, args.task_list_id || '@default', args.show_completed || false) };
+
+      case 'create_task':
+        return { task: await createTask(args.account_name, args.task_list_id || '@default', {
+          title: args.title,
+          notes: args.notes,
+          due:   args.due,
+        }) };
+
+      case 'update_task':
+        return { task: await updateTask(args.account_name, args.task_list_id || '@default', args.task_id, {
+          title: args.title,
+          notes: args.notes,
+          due:   args.due,
+        }) };
+
+      case 'complete_task':
+        return await completeTask(args.account_name, args.task_list_id || '@default', args.task_id);
+
+      case 'delete_task':
+        return await deleteTask(args.account_name, args.task_list_id || '@default', args.task_id);
+
+      // ─── Plantillas ──────────────────────────────────────────────────────────────
+
       case 'create_event_from_template':
         const template = getTemplate(args.template_name);
         if (!template) {
@@ -110,7 +172,7 @@ async function executeTool(name, args) {
         return { error: `Tool desconocida: ${name}` };
     }
   } catch (err) {
-    console.error(`[ai] Error en tool "${name}":`, err.message?.slice(0, 100));
+    console.error(`[ai:tool] ✗ ${name} falló en ${Date.now() - t0}ms:`, err.message?.slice(0, 200));
     return { error: err.message || 'Error desconocido' };
   }
 }
@@ -122,6 +184,7 @@ async function executeTool(name, args) {
  */
 function sanitizeHistory(history) {
   let arr = [...history];
+  const before = arr.length;
   let changed = true;
   while (changed) {
     changed = false;
@@ -133,6 +196,9 @@ function sanitizeHistory(history) {
       arr.pop();
       changed = true;
     }
+  }
+  if (arr.length !== before) {
+    console.warn(`[ai:history] sanitize eliminó ${before - arr.length} mensajes incompletos (${before} → ${arr.length})`);
   }
   return arr;
 }
@@ -146,9 +212,18 @@ function sanitizeHistory(history) {
  * @returns {{ reply: string, updatedHistory: Array }}
  */
 export async function processMessage(userMessage, history) {
-  // Sistema + historial previo + mensaje nuevo
+  const t0 = Date.now();
+  const rawHistory = history || [];
+
   // Sanitize history to remove any trailing incomplete agentic turns saved from a previous MAX_LOOPS scenario
-  const cleanHistory = sanitizeHistory(history || []);
+  const cleanHistory = sanitizeHistory(rawHistory);
+
+  console.log(`[ai] processMessage  historial=${cleanHistory.length} msgs  texto="${userMessage.slice(0, 80)}"`);
+  if (cleanHistory.length > 0) {
+    const lastMsg = cleanHistory[cleanHistory.length - 1];
+    console.log(`[ai] último msg historial: role=${lastMsg.role}  tool_calls=${lastMsg.tool_calls?.length ?? 0}`);
+  }
+
   const messages = [
     { role: 'system', content: SYSTEM_CONTENT },
     ...cleanHistory,
@@ -160,6 +235,7 @@ export async function processMessage(userMessage, history) {
   let currentMessages = [...messages];
 
   while (loops <= MAX_LOOPS) {
+    console.log(`[ai] loop ${loops}  msgs_en_contexto=${currentMessages.length}`);
     let response;
     try {
       response = await openai.chat.completions.create({
@@ -177,6 +253,8 @@ export async function processMessage(userMessage, history) {
       }
       if (err.error) {
         console.error('[ai] OpenRouter body error:', JSON.stringify(err.error).slice(0, 1000));
+        // Dump first few messages of context to help diagnose malformed history
+        console.error('[ai] Primeros 3 msgs enviados:', JSON.stringify(currentMessages.slice(1, 4)).slice(0, 800));
       } else if (err.response?.data) {
         console.error('[ai] OpenRouter body data:', JSON.stringify(err.response.data).slice(0, 1000));
       } else {
@@ -185,24 +263,31 @@ export async function processMessage(userMessage, history) {
       throw err;
     }
 
-    const assistantMsg = response.choices[0].message;
+    const choice = response.choices[0];
+    const assistantMsg = choice.message;
+    const finishReason = choice.finish_reason;
+    console.log(`[ai] respuesta  finish_reason=${finishReason}  tool_calls=${assistantMsg.tool_calls?.length ?? 0}  tokens=${response.usage?.total_tokens ?? '?'}`);
     currentMessages.push(assistantMsg);
 
     // Sin tool calls → tenemos la respuesta final
     if (!assistantMsg.tool_calls || assistantMsg.tool_calls.length === 0) {
       const reply = assistantMsg.content?.trim() || 'No pude generar una respuesta. Intentá de nuevo.';
-      // Devolver historial sin el mensaje de sistema (para no duplicarlo en cada llamada)
       const updatedHistory = currentMessages.slice(1);
+      console.log(`[ai] ✓ respuesta final en ${Date.now() - t0}ms  largo=${reply.length}  historial_nuevo=${updatedHistory.length}`);
       return { reply, updatedHistory };
     }
 
     // Ejecutar todas las tools en paralelo
     loops++;
+    const toolNames = assistantMsg.tool_calls.map(tc => tc.function.name).join(', ');
+    console.log(`[ai] ejecutando ${assistantMsg.tool_calls.length} tool(s): ${toolNames}`);
     const toolResults = await Promise.all(
       assistantMsg.tool_calls.map(async (tc) => {
         let args = {};
         try { args = JSON.parse(tc.function.arguments || '{}'); } catch { /* noop */ }
         const result = await executeTool(tc.function.name, args);
+        const resultSummary = JSON.stringify(result).slice(0, 100);
+        console.log(`[ai:tool] ✓ ${tc.function.name}  id=${tc.id.slice(-8)}  result=${resultSummary}`);
         return {
           role:         'tool',
           tool_call_id: tc.id,
@@ -217,6 +302,7 @@ export async function processMessage(userMessage, history) {
   // Fallback si se alcanza el límite de loops
   // Push a final assistant message so the history doesn't end with tool messages,
   // which would cause "unexpected tool_use_id" errors on the next request.
+  console.warn(`[ai] MAX_LOOPS alcanzado (${MAX_LOOPS}) en ${Date.now() - t0}ms`);
   const fallbackReply = 'Alcancé el límite de operaciones. Intentá con una pregunta más simple.';
   currentMessages.push({ role: 'assistant', content: fallbackReply });
   return {

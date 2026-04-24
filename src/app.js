@@ -23,6 +23,9 @@ app.use('/', webhookRouter);    // GET /webhook + POST /webhook
 app.use('/', authRouter);       // GET /auth/google + /auth/google/callback + /auth/status
 app.use('/', dashboardRouter);  // GET /dashboard + /api/status + /api/events
 
+// ─── Root redirect ────────────────────────────────────────────────────────────
+app.get('/', (req, res) => res.redirect('/dashboard'));
+
 // ─── Health check ─────────────────────────────────────────────────────────────
 app.get('/health', (req, res) => {
   res.json({ status: 'ok', timestamp: new Date().toISOString() });
@@ -43,6 +46,9 @@ async function start() {
 
     // Iniciar procesador de recordatorios
     startReminderProcessor();
+
+    // Iniciar scheduler de tareas programadas
+    startScheduler();
 
     app.listen(config.port, () => {
       console.log(`\n🤖 WhatsApp Calendar Bot corriendo en http://localhost:${config.port}`);

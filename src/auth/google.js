@@ -146,11 +146,7 @@ router.get(['/auth/google/callback', '/auth/google/callback/'], async (req, res)
 
     await saveTokens(account, tokens);
 
-    res.send(`
-      <h2>✅ Cuenta "${account}" conectada correctamente</h2>
-      <p>Ya podés cerrar esta ventana y usar el bot de WhatsApp.</p>
-      <p><a href="/auth/status">Ver todas las cuentas conectadas</a></p>
-    `);
+    res.redirect('/dashboard');
   } catch (err) {
     // No exponer detalles del error OAuth al usuario
     console.error('[auth] Error intercambiando código OAuth:', err.code || 'UNKNOWN');

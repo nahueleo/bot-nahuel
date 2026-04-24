@@ -11,7 +11,9 @@ function trimHistory(history) {
   if (history.length <= MAX_HISTORY_MESSAGES) return history;
   const trimmed = history.slice(-MAX_HISTORY_MESSAGES);
   const firstUser = trimmed.findIndex(m => m.role === 'user');
-  return firstUser > 0 ? trimmed.slice(firstUser) : trimmed;
+  const result = firstUser > 0 ? trimmed.slice(firstUser) : trimmed;
+  console.log(`[store] trimHistory: ${history.length} → ${result.length} msgs (firstUser=${firstUser})`);
+  return result;
 }
 
 /**
