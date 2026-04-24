@@ -50,20 +50,3 @@ export const config = {
     url: process.env.REDIS_URL || 'redis://localhost:6379',
   },
 };
-
-function required(name, fatal = false) {
-  const val = process.env[name];
-  if (!val) {
-    const isDev = process.env.NODE_ENV !== 'production';
-    const msg = `[config] Variable de entorno requerida no encontrada: ${name}`;
-
-    if (isDev && !fatal) {
-      console.warn(`${msg} (usando valor vacío en desarrollo)`);
-      return '';
-    }
-
-    console.error(msg);
-    process.exit(1);
-  }
-  return val;
-}
