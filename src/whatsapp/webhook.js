@@ -3,7 +3,8 @@ import crypto from 'crypto';
 import { config } from '../config/index.js';
 import { processMessage } from '../ai/claude.js';
 import { getHistory, setHistory, clearHistory, logMessage } from '../conversation/store.js';
-import { sendWhatsAppMessage } from './api.js';
+import { sendWhatsAppMessage, downloadMedia } from './api.js';
+import { transcribeAudio } from '../ai/transcribe.js';
 import { broadcastSSE } from '../dashboard/routes.js';
 
 const router = Router();
@@ -90,20 +91,59 @@ async function handleIncoming(body) {
 
   const msg = messages[0];
 
-  // Solo procesar mensajes de texto por ahora
-  if (msg.type !== 'text') {
+  const from = msg.from; // número del remitente
+  const fromTag = from.slice(-4).padStart(from.length, '*');
+  const t0 = Date.now();
+
+  let text;
+  let imageContent = null; // { base64, mimeType } — solo para la llamada a Claude, no se guarda en historial
+
+  if (msg.type === 'text') {
+    text = msg.text?.body?.trim();
+    if (!text) return;
+    console.log(`[webhook] Texto de: ${fromTag}  "${text.slice(0, 60)}"`);
+
+  } else if (msg.type === 'image') {
+    const mediaId = msg.image?.id;
+    if (!mediaId) return;
+    const caption = msg.image?.caption?.trim() || '';
+    console.log(`[webhook] Imagen de: ${fromTag}  caption="${caption.slice(0, 60)}"`);
+
+    try {
+      const { buffer, mimeType } = await downloadMedia(mediaId);
+      // Normalizamos el mime type para el content type de la imagen
+      const cleanMime = mimeType.split(';')[0].trim();
+      imageContent = { base64: buffer.toString('base64'), mimeType: cleanMime };
+      text = caption || 'Describí esta imagen';
+    } catch (err) {
+      console.error('[webhook] Error descargando imagen:', err.message);
+      await sendWhatsAppMessage(from, 'No pude procesar la imagen. Intentá de nuevo.');
+      return;
+    }
+
+  } else if (msg.type === 'audio') {
+    const mediaId = msg.audio?.id;
+    if (!mediaId) return;
+    console.log(`[webhook] Audio de: ${fromTag}`);
+
+    try {
+      const { buffer, mimeType } = await downloadMedia(mediaId);
+      text = await transcribeAudio(buffer, mimeType);
+      if (!text) {
+        await sendWhatsAppMessage(from, 'No pude entender el audio. Intentá hablar más claro o escribir tu mensaje.');
+        return;
+      }
+      console.log(`[webhook] Audio transcripto: "${text.slice(0, 80)}"`);
+    } catch (err) {
+      console.error('[webhook] Error procesando audio:', err.message);
+      await sendWhatsAppMessage(from, 'No pude procesar el audio. Intentá de nuevo.');
+      return;
+    }
+
+  } else {
     console.log(`[webhook] Tipo de mensaje ignorado: ${msg.type}`);
     return;
   }
-
-  const from = msg.from; // número del remitente
-  const text = msg.text?.body?.trim();
-
-  if (!text) return;
-
-  const fromTag = from.slice(-4).padStart(from.length, '*');
-  const t0 = Date.now();
-  console.log(`[webhook] Mensaje recibido de: ${fromTag}  texto="${text.slice(0, 60)}"`);
 
   // Comando de reset: limpiar historial de conversación
   if (text.toLowerCase() === 'reset' || text.toLowerCase() === 'reiniciar') {
@@ -121,7 +161,7 @@ async function handleIncoming(body) {
   let updatedHistory;
 
   try {
-    ({ reply, updatedHistory } = await processMessage(text, history));
+    ({ reply, updatedHistory } = await processMessage(text, history, imageContent));
   } catch (err) {
     console.error(`[webhook] Error generando respuesta (${Date.now() - t0}ms):`, err.message || err.code || err);
     if (err.error) {

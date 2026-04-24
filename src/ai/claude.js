@@ -237,30 +237,43 @@ function sanitizeHistory(history) {
 }
 
 /**
- * Procesa un mensaje con Groq (llama-3.3-70b-versatile), ejecutando tools
+ * Procesa un mensaje con Claude vía OpenRouter, ejecutando tools
  * en loop hasta obtener respuesta de texto final.
  *
  * @param {string} userMessage
- * @param {Array}  history  - Historial en formato OpenAI: [{ role, content }]
+ * @param {Array}  history       - Historial en formato OpenAI: [{ role, content }]
+ * @param {{ base64: string, mimeType: string } | null} imageContent - Imagen opcional
  * @returns {{ reply: string, updatedHistory: Array }}
  */
-export async function processMessage(userMessage, history) {
+export async function processMessage(userMessage, history, imageContent = null) {
   const t0 = Date.now();
   const rawHistory = history || [];
 
   // Sanitize history to remove any trailing incomplete agentic turns saved from a previous MAX_LOOPS scenario
   const cleanHistory = sanitizeHistory(rawHistory);
 
-  console.log(`[ai] processMessage  historial=${cleanHistory.length} msgs  texto="${userMessage.slice(0, 80)}"`);
+  console.log(`[ai] processMessage  historial=${cleanHistory.length} msgs  imagen=${imageContent ? 'sí' : 'no'}  texto="${userMessage.slice(0, 80)}"`);
   if (cleanHistory.length > 0) {
     const lastMsg = cleanHistory[cleanHistory.length - 1];
     console.log(`[ai] último msg historial: role=${lastMsg.role}  tool_calls=${lastMsg.tool_calls?.length ?? 0}`);
   }
 
+  // Construir el contenido del mensaje del usuario
+  // Si hay imagen, se pasa como image_url (formato OpenAI vision)
+  const userContent = imageContent
+    ? [
+        {
+          type: 'image_url',
+          image_url: { url: `data:${imageContent.mimeType};base64,${imageContent.base64}` },
+        },
+        { type: 'text', text: userMessage },
+      ]
+    : userMessage;
+
   const messages = [
     { role: 'system', content: buildSystemContent() },
     ...cleanHistory,
-    { role: 'user', content: userMessage },
+    { role: 'user', content: userContent },
   ];
 
   const MAX_LOOPS = 5;
@@ -305,7 +318,7 @@ export async function processMessage(userMessage, history) {
     // Sin tool calls → tenemos la respuesta final
     if (!assistantMsg.tool_calls || assistantMsg.tool_calls.length === 0) {
       const reply = assistantMsg.content?.trim() || 'No pude generar una respuesta. Intentá de nuevo.';
-      const updatedHistory = currentMessages.slice(1);
+      const updatedHistory = buildUpdatedHistory(currentMessages, cleanHistory.length, imageContent, userMessage);
       console.log(`[ai] ✓ respuesta final en ${Date.now() - t0}ms  largo=${reply.length}  historial_nuevo=${updatedHistory.length}`);
       return { reply, updatedHistory };
     }
@@ -340,6 +353,22 @@ export async function processMessage(userMessage, history) {
   currentMessages.push({ role: 'assistant', content: fallbackReply });
   return {
     reply:          fallbackReply,
-    updatedHistory: currentMessages.slice(1),
+    updatedHistory: buildUpdatedHistory(currentMessages, cleanHistory.length, imageContent, userMessage),
   };
+}
+
+/**
+ * Construye el historial a guardar en Redis, reemplazando el mensaje del usuario
+ * con imagen (base64) por una versión texto-only para evitar inflar el almacenamiento.
+ */
+function buildUpdatedHistory(currentMessages, cleanHistoryLength, imageContent, userMessage) {
+  const raw = currentMessages.slice(1); // quitar system message
+  if (!imageContent) return raw;
+
+  // El mensaje del usuario con imagen está en la posición cleanHistoryLength
+  return [
+    ...raw.slice(0, cleanHistoryLength),
+    { role: 'user', content: userMessage },
+    ...raw.slice(cleanHistoryLength + 1),
+  ];
 }

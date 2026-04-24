@@ -4,6 +4,40 @@ import { config } from '../config/index.js';
 const WA_API_BASE = 'https://graph.facebook.com/v19.0';
 
 /**
+ * Descarga un media de WhatsApp dado su media_id.
+ * Primero obtiene la URL de descarga y luego descarga el archivo.
+ * @param {string} mediaId - ID del media recibido en el webhook
+ * @returns {{ buffer: Buffer, mimeType: string }}
+ */
+export async function downloadMedia(mediaId) {
+  // Paso 1: obtener metadata (URL de descarga + mime_type)
+  const metaRes = await fetch(`${WA_API_BASE}/${mediaId}`, {
+    headers: { 'Authorization': `Bearer ${config.whatsapp.accessToken}` },
+    redirect: 'error',
+  });
+
+  if (!metaRes.ok) {
+    throw new Error(`WhatsApp media metadata error: ${metaRes.status}`);
+  }
+
+  const meta = await metaRes.json();
+  const downloadUrl = meta.url;
+  const mimeType = meta.mime_type || 'application/octet-stream';
+
+  // Paso 2: descargar el archivo — la URL viene de Meta, no del usuario
+  const fileRes = await fetch(downloadUrl, {
+    headers: { 'Authorization': `Bearer ${config.whatsapp.accessToken}` },
+  });
+
+  if (!fileRes.ok) {
+    throw new Error(`WhatsApp media download error: ${fileRes.status}`);
+  }
+
+  const buffer = Buffer.from(await fileRes.arrayBuffer());
+  return { buffer, mimeType };
+}
+
+/**
  * Normaliza números argentinos al formato que acepta la WhatsApp Cloud API.
  *
  * WhatsApp entrega números argentinos en el webhook en formato E.164:
