@@ -62,7 +62,7 @@ async function start() {
     startReminderProcessor();
 
     // Iniciar scheduler de tareas programadas
-    startScheduler();
+    await startScheduler();
 
     app.listen(config.port, () => {
       console.log(`\n🤖 WhatsApp Calendar Bot corriendo en http://localhost:${config.port}`);

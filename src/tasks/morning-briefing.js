@@ -1,8 +1,7 @@
 // Backward-compatibility shim: delegates to the new task executor.
 // The old morning_briefing config is migrated to a v2 task on startup.
-import { getTasksConfig, updateTask } from '../redis/tasks.js';
-import { runTask } from './task-executor.js';
 import { getAllTasks } from '../redis/tasks.js';
+import { runTask } from './task-executor.js';
 
 /**
  * Runs the "Resumen Matutino" task (first task named that way, or first task).

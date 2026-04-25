@@ -3,12 +3,12 @@ import { listConnectedAccounts } from '../auth/google.js';
 import { getHistory, setHistory, getMessageLog, logMessage } from '../conversation/store.js';
 import { getRedisClient } from '../redis/client.js';
 import { getPendingReminders } from '../redis/reminders.js';
-import { getAllTasks, getTaskById, createTask, updateTask, deleteTask as deleteScheduledTask, getTaskLog, migrateLegacyConfig } from '../redis/tasks.js';
+import { getAllTasks, getTaskById, createTask, updateTask, deleteTask as deleteScheduledTask, getTaskLog } from '../redis/tasks.js';
 import { sendWhatsAppMessage } from '../whatsapp/api.js';
 import { processMessage } from '../ai/claude.js';
 import { listAllCalendars, getEvents } from '../calendar/client.js';
 import { runTask } from '../tasks/task-executor.js';
-import { syncScheduler, getScheduleDescription } from '../tasks/scheduler.js';
+import { syncScheduler } from '../tasks/scheduler.js';
 import { getToolDescriptors } from '../tasks/tool-registry.js';
 import { searchEmails, getUnreadCount, markAsRead } from '../gmail/client.js';
 import { getTasks, completeTask, deleteTask } from '../tasks/client.js';
@@ -1086,6 +1086,7 @@ function goToTab(id) {
   if (id === 'calendar') loadCalendar();
   if (id === 'gmail') loadGmail();
   if (id === 'gtasks') loadGTasks();
+  if (id === 'tasks') loadTasks();
 }
 document.querySelectorAll('.nav-item[data-tab]').forEach(el => {
   el.addEventListener('click', () => { goToTab(el.dataset.tab); closeMenu(); });
@@ -1170,13 +1171,6 @@ async function loadStatus() {
         '</div>'
       ).join('');
     }
-
-    // Populate task config calendar account dropdown
-    const sel = document.getElementById('mb-calendar-account');
-    const curVal = sel.value;
-    sel.innerHTML = '<option value="">— Sin calendario —</option>' +
-      (d.accounts||[]).map(a => '<option value="' + a + '">' + a + '</option>').join('');
-    if (curVal) sel.value = curVal;
 
     // Populate calendar/gmail/gtasks account selectors
     const accs = d.accounts || [];
@@ -1397,145 +1391,407 @@ async function loadCalendar() {
   } catch {}
 }
 
-// ── Tasks ─────────────────────────────────────────────────────────────────
-async function loadTasks() {
+// ── Tasks (multi-task system) ──────────────────────────────────────────────
+let _allTools = [];  // cached tool descriptors from /api/tools
+
+async function ensureTools() {
+  if (_allTools.length) return _allTools;
   try {
-    const { tasks, logs } = await fetch('/api/tasks').then(r => r.json());
-    const mb = tasks?.morning_briefing;
-    if (!mb) return;
+    const { tools } = await fetch('/api/tools').then(r => r.json());
+    _allTools = tools || [];
+  } catch { _allTools = []; }
+  return _allTools;
+}
 
-    document.getElementById('mb-enabled').checked = !!mb.enabled;
-    document.getElementById('mb-time').value = mb.time || '07:00';
-    document.getElementById('mb-phone').value = mb.phone || '';
-    if (mb.calendarAccount) document.getElementById('mb-calendar-account').value = mb.calendarAccount;
+async function loadTasks() {
+  const listEl  = document.getElementById('tasks-list');
+  const ovCard  = document.getElementById('overview-task-status');
 
-    // Sections
-    const sec = mb.sections || {};
-    document.getElementById('sec-weather-chk').checked  = sec.weather !== false;
-    document.getElementById('sec-belgrano-chk').checked = sec.news_belgrano !== false;
-    document.getElementById('sec-cordoba-chk').checked  = sec.news_cordoba !== false;
-    document.getElementById('sec-argentina-chk').checked= sec.news_argentina !== false;
-    document.getElementById('sec-calendar-chk').checked = sec.calendar !== false;
-    updateSectionCards();
+  try {
+    const { tasks } = await fetch('/api/tasks').then(r => r.json());
+    await ensureTools();
 
-    // Status badge
-    const badge = document.getElementById('mb-status-badge');
-    badge.textContent = mb.enabled ? 'Activo — ' + mb.time : 'Desactivado';
-    badge.className = 'task-status ' + (mb.enabled ? 'on' : 'off');
-
-    // Last run
-    const lr = document.getElementById('mb-last-run');
-    if (mb.lastRun) {
-      const icon = mb.lastStatus === 'ok' ? '✅' : '❌';
-      lr.textContent = icon + ' Último envío: ' + fmt(mb.lastRun) + (mb.lastError ? ' — ' + mb.lastError : '');
-    } else {
-      lr.textContent = 'Nunca ejecutado.';
+    // ── Overview card ──
+    if (ovCard) {
+      if (!tasks?.length) {
+        ovCard.innerHTML = '<div style="color:var(--muted);font-size:13px;padding:4px 0">Sin tareas aún. <a href="#" onclick="goToTab(\'tasks\');return false">Crear una →</a></div>';
+      } else {
+        const enabled = tasks.filter(t => t.enabled);
+        ovCard.innerHTML = tasks.slice(0,3).map(t =>
+          '<div class="stat-row"><span class="stat-lbl">' + t.emoji + ' ' + escHtml(t.name) + '</span>' +
+          '<span class="stat-val">' + (t.enabled ? '<span style="color:var(--green)">●</span> Activa' : '<span style="color:var(--muted)">● Inactiva</span>') + '</span></div>'
+        ).join('') +
+        (tasks.length > 3 ? '<div style="font-size:11px;color:var(--muted);margin-top:6px">+ ' + (tasks.length-3) + ' más</div>' : '');
+      }
     }
 
-    // Overview card
-    const ovCard = document.getElementById('overview-task-status');
-    if (mb.enabled) {
-      ovCard.innerHTML = '<div class="stat-row"><span class="stat-lbl">Horario</span><span class="stat-val">' + mb.time + ' todos los días</span></div>' +
-        (mb.lastRun ? '<div class="stat-row"><span class="stat-lbl">Último envío</span><span class="stat-val">' + fmt(mb.lastRun) + '</span></div>' : '');
-    } else {
-      ovCard.innerHTML = '<div style="color:var(--muted);font-size:13px;padding:8px 0">Desactivado. Ir a <strong>Tareas programadas</strong> para configurar.</div>';
+    // ── Tasks list tab ──
+    if (!listEl) return;
+    if (!tasks?.length) {
+      listEl.innerHTML = '<div class="empty" style="padding:60px 0">' +
+        '<div style="font-size:40px;margin-bottom:12px">⚙️</div>' +
+        '<div style="margin-bottom:16px">No hay tareas programadas todavía.</div>' +
+        '<button class="btn btn-primary" onclick="openTaskModal(null)">+ Crear primera tarea</button>' +
+        '</div>';
+      return;
     }
 
-    // Log
-    const logEl = document.getElementById('mb-log');
-    const logItems = logs?.morning_briefing || [];
-    if (!logItems.length) {
-      logEl.innerHTML = '<div class="empty">Sin ejecuciones registradas</div>';
-    } else {
-      logEl.innerHTML = logItems.map(l =>
-        '<div class="log-item">' +
-          '<span class="log-icon">' + (l.status === 'ok' ? '✅' : '❌') + '</span>' +
-          '<span>' + fmt(l.ts) + '</span>' +
-          (l.error ? '<span style="color:var(--red)">— ' + l.error + '</span>' : '<span style="color:var(--muted)">— ok</span>') +
-        '</div>'
-      ).join('');
-    }
+    listEl.innerHTML = tasks.map(task => renderTaskCard(task)).join('');
   } catch (e) {
     console.error('Error cargando tareas:', e);
+    if (listEl) listEl.innerHTML = '<div class="empty">Error cargando tareas</div>';
   }
 }
 
-function updateSectionCards() {
-  const map = {
-    'sec-weather': 'sec-weather-chk',
-    'sec-belgrano': 'sec-belgrano-chk',
-    'sec-cordoba': 'sec-cordoba-chk',
-    'sec-argentina': 'sec-argentina-chk',
-    'sec-calendar': 'sec-calendar-chk',
-  };
-  Object.entries(map).forEach(([cardId, chkId]) => {
-    const checked = document.getElementById(chkId)?.checked;
-    document.getElementById(cardId)?.classList.toggle('active', !!checked);
-  });
+function escHtml(s) {
+  return String(s ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
 }
 
-async function saveMorningBriefing() {
-  const phone = document.getElementById('mb-phone').value.trim();
-  const payload = {
-    enabled:  document.getElementById('mb-enabled').checked,
-    time:     document.getElementById('mb-time').value,
-    phone,
-    calendarAccount: document.getElementById('mb-calendar-account').value,
-  };
+function renderTaskCard(task) {
+  const scheduleDesc = scheduleDescText(task.schedule);
+  const lastRunText  = task.lastRun
+    ? (task.lastStatus === 'ok' ? '✅ ' : '❌ ') + 'Último envío: ' + fmt(task.lastRun)
+    : 'Nunca ejecutado';
+
+  const toolChips = (task.tools || []).map(t => {
+    const def = _allTools.find(x => x.id === t.id);
+    if (!def) return '';
+    return '<span class="tool-chip">' + def.emoji + ' ' + def.name + '</span>';
+  }).join('');
+
+  return '<div class="task-card" id="tcard-' + task.id + '">' +
+    '<div class="task-card-head">' +
+      '<div class="task-card-emoji">' + (task.emoji || '🤖') + '</div>' +
+      '<div class="task-card-name">' + escHtml(task.name) + '</div>' +
+      '<span class="task-status ' + (task.enabled ? 'on' : 'off') + '" style="font-size:11px;padding:3px 10px;border-radius:20px;font-weight:600;margin-left:4px">' +
+        (task.enabled ? 'Activa' : 'Inactiva') + '</span>' +
+    '</div>' +
+    '<div class="task-card-meta">' +
+      '<span>🕐 ' + escHtml(scheduleDesc) + '</span>' +
+      (task.phone ? '<span>📱 +' + task.phone.slice(-6).padStart(10,'*') + '</span>' : '') +
+    '</div>' +
+    (toolChips ? '<div class="task-card-tools">' + toolChips + '</div>' : '') +
+    '<div class="task-card-footer">' +
+      '<button class="btn btn-success" style="padding:6px 12px;font-size:12px" onclick="runTaskNow(\'' + task.id + '\',this)">▶ Enviar ahora</button>' +
+      '<button class="btn btn-ghost" style="padding:6px 12px;font-size:12px" onclick="openTaskModal(\'' + task.id + '\')">✏️ Editar</button>' +
+      '<button class="btn btn-ghost" style="padding:6px 12px;font-size:12px" onclick="showTaskLog(\'' + task.id + '\',\'' + escHtml(task.name) + '\')">📋 Logs</button>' +
+      '<button class="btn btn-ghost" style="padding:6px 12px;font-size:12px;color:var(--red)" onclick="deleteTask(\'' + task.id + '\',\'' + escHtml(task.name) + '\')">🗑</button>' +
+      '<label class="toggle" style="margin-left:auto" title="Activar/desactivar">' +
+        '<input type="checkbox" ' + (task.enabled ? 'checked' : '') + ' onchange="toggleTask(\'' + task.id + '\',this.checked)">' +
+        '<span class="slider"></span></label>' +
+      '<span class="task-last-run">' + lastRunText + '</span>' +
+    '</div>' +
+  '</div>';
+}
+
+function scheduleDescText(schedule) {
+  if (!schedule) return 'Sin configurar';
+  if (schedule.type === 'custom') return 'Cron: ' + (schedule.cron || '?');
+  const time = schedule.time || '07:00';
+  const D = ['Dom','Lun','Mar','Mié','Jue','Vie','Sáb'];
+  switch (schedule.type) {
+    case 'weekdays': return 'Lun–Vie a las ' + time;
+    case 'weekends': return 'Sáb–Dom a las ' + time;
+    case 'weekly': return (schedule.days || []).map(d => D[d]).join(', ') + ' a las ' + time;
+    default: return 'Todos los días a las ' + time;
+  }
+}
+
+async function toggleTask(id, enabled) {
   try {
-    const r = await fetch('/api/tasks/morning_briefing', {
-      method: 'POST',
+    const r = await fetch('/api/tasks/' + id, {
+      method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(payload),
+      body: JSON.stringify({ enabled }),
     }).then(r => r.json());
-    if (r.error) { showToast('Error: ' + r.error, false); return; }
-    showToast('✅ Configuración guardada');
+    if (r.error) { showToast('Error: ' + r.error, false); loadTasks(); return; }
+    showToast(enabled ? '✅ Tarea activada' : '⏸ Tarea desactivada');
     loadTasks();
-  } catch { showToast('Error guardando configuración', false); }
+  } catch { showToast('Error de conexión', false); }
 }
 
-function saveSections() {
-  updateSectionCards();
-  const payload = {
-    sections: {
-      weather:       document.getElementById('sec-weather-chk').checked,
-      news_belgrano: document.getElementById('sec-belgrano-chk').checked,
-      news_cordoba:  document.getElementById('sec-cordoba-chk').checked,
-      news_argentina:document.getElementById('sec-argentina-chk').checked,
-      calendar:      document.getElementById('sec-calendar-chk').checked,
-    },
-  };
-  fetch('/api/tasks/morning_briefing', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(payload),
-  }).then(r => r.json()).then(r => {
-    if (r.error) showToast('Error: ' + r.error, false);
-    else showToast('✅ Secciones guardadas');
-  }).catch(() => showToast('Error guardando secciones', false));
-}
-
-// Debounced save for phone input
-let saveTimer;
-function debounceSave() {
-  clearTimeout(saveTimer);
-  saveTimer = setTimeout(saveMorningBriefing, 800);
-}
-
-async function runTaskNow(id) {
-  const btn = document.getElementById('btn-run-' + (id === 'morning_briefing' ? 'mb' : id));
-  const btn2 = document.getElementById('btn-run-briefing');
-  [btn, btn2].forEach(b => { if (b) { b.disabled = true; b.textContent = '⏳ Enviando...'; } });
+async function runTaskNow(id, btn) {
+  if (btn) { btn.disabled = true; btn.textContent = '⏳ Enviando...'; }
   try {
     const r = await fetch('/api/tasks/' + id + '/run', { method: 'POST' }).then(r => r.json());
-    if (r.success) showToast('✅ Resumen enviado correctamente');
+    if (r.success) showToast('✅ Tarea enviada correctamente');
     else showToast('❌ Error: ' + (r.error || 'desconocido'), false);
     loadTasks();
   } catch { showToast('Error de conexión', false); }
-  finally {
-    [btn, btn2].forEach(b => { if (b) { b.disabled = false; b.textContent = b.id === 'btn-run-briefing' ? '▶ Enviar ahora' : '▶ Enviar ahora (prueba)'; } });
-  }
+  finally { if (btn) { btn.disabled = false; btn.textContent = '▶ Enviar ahora'; } }
 }
+
+async function deleteTask(id, name) {
+  if (!confirm('¿Eliminar la tarea "' + name + '"? Esta acción no se puede deshacer.')) return;
+  try {
+    const r = await fetch('/api/tasks/' + id, { method: 'DELETE' }).then(r => r.json());
+    if (r.error) { showToast('Error: ' + r.error, false); return; }
+    showToast('🗑 Tarea eliminada');
+    loadTasks();
+  } catch { showToast('Error de conexión', false); }
+}
+
+async function showTaskLog(id, name) {
+  const panel = document.getElementById('task-log-panel');
+  const listEl = document.getElementById('task-log-list');
+  const titleEl = document.getElementById('log-panel-title');
+  if (!panel) return;
+
+  titleEl.textContent = 'Últimas ejecuciones — ' + name;
+  listEl.innerHTML = '<div class="empty">Cargando...</div>';
+  panel.style.display = 'block';
+  panel.scrollIntoView({ behavior: 'smooth', block: 'start' });
+
+  try {
+    const { log } = await fetch('/api/tasks/' + id + '/log').then(r => r.json());
+    if (!log?.length) { listEl.innerHTML = '<div class="empty">Sin ejecuciones registradas</div>'; return; }
+    listEl.innerHTML = log.map(l =>
+      '<div class="log-item">' +
+        '<span class="log-icon">' + (l.status === 'ok' ? '✅' : '❌') + '</span>' +
+        '<span>' + fmt(l.ts) + '</span>' +
+        (l.error ? '<span style="color:var(--red)">— ' + escHtml(l.error) + '</span>' : '<span style="color:var(--muted)">— ok</span>') +
+        (l.chars ? '<span style="color:var(--muted)">' + l.chars + ' chars</span>' : '') +
+      '</div>'
+    ).join('');
+  } catch { listEl.innerHTML = '<div class="empty">Error cargando log</div>'; }
+}
+
+function closeLogPanel() {
+  const p = document.getElementById('task-log-panel');
+  if (p) p.style.display = 'none';
+}
+
+// ─── Modal: crear / editar tarea ──────────────────────────────────────────────
+let _editingTaskId = null;
+let _toolStates = {};  // { toolId: { enabled, config } }
+
+async function openTaskModal(taskId) {
+  _editingTaskId = taskId;
+  _toolStates = {};
+  const overlay = document.getElementById('task-modal-overlay');
+  const titleEl = document.getElementById('modal-title');
+
+  await ensureTools();
+
+  if (taskId) {
+    titleEl.textContent = '✏️ Editar Tarea';
+    try {
+      const { task } = await fetch('/api/tasks/' + taskId).then(r => r.json());
+      document.getElementById('modal-task-id').value = task.id;
+      document.getElementById('modal-emoji').value   = task.emoji || '🤖';
+      document.getElementById('modal-name').value    = task.name  || '';
+      document.getElementById('modal-phone').value   = task.phone || '';
+
+      const sched = task.schedule || {};
+      document.getElementById('modal-schedule-type').value = sched.type || 'daily';
+      document.getElementById('modal-time').value  = sched.time || '07:00';
+      document.getElementById('modal-cron').value  = sched.cron || '';
+
+      // Restore day checkboxes
+      const dayChks = document.querySelectorAll('.day-chk');
+      const selDays = sched.days || [1,2,3,4,5];
+      dayChks.forEach(chk => { chk.checked = selDays.includes(Number(chk.dataset.day)); });
+
+      // Load tool states
+      for (const te of task.tools || []) {
+        _toolStates[te.id] = { enabled: true, config: te.config ?? {} };
+      }
+    } catch { showToast('Error cargando tarea', false); return; }
+  } else {
+    titleEl.textContent = '+ Nueva Tarea';
+    document.getElementById('modal-task-id').value = '';
+    document.getElementById('modal-emoji').value   = '🤖';
+    document.getElementById('modal-name').value    = '';
+    document.getElementById('modal-phone').value   = '';
+    document.getElementById('modal-schedule-type').value = 'daily';
+    document.getElementById('modal-time').value    = '07:00';
+    document.getElementById('modal-cron').value    = '';
+    document.querySelectorAll('.day-chk').forEach((c,i) => { c.checked = i>=1&&i<=5; });
+  }
+
+  onScheduleTypeChange();
+  renderToolsInModal();
+
+  overlay.style.display = 'block';
+  document.body.style.overflow = 'hidden';
+}
+
+function closeTaskModal() {
+  document.getElementById('task-modal-overlay').style.display = 'none';
+  document.body.style.overflow = '';
+}
+
+function onScheduleTypeChange() {
+  const type = document.getElementById('modal-schedule-type').value;
+  document.getElementById('modal-time-row').style.display  = type !== 'custom' ? '' : 'none';
+  document.getElementById('modal-days-row').style.display  = type === 'weekly' ? '' : 'none';
+  document.getElementById('modal-cron-row').style.display  = type === 'custom' ? '' : 'none';
+}
+
+function renderToolsInModal() {
+  const container = document.getElementById('modal-tools-list');
+  if (!container) return;
+
+  container.innerHTML = _allTools.map(tool => {
+    const state  = _toolStates[tool.id] || { enabled: false, config: {} };
+    const cfg    = state.config || {};
+    const isOn   = !!state.enabled;
+
+    // Build config fields HTML
+    const fieldsHtml = (tool.configFields || []).map(field => {
+      if (field.type === 'text') {
+        return '<div class="field" style="margin-bottom:8px"><label style="font-size:11px">' + field.label + '</label>' +
+          '<input type="text" data-tool="' + tool.id + '" data-key="' + field.key + '" ' +
+          'value="' + escHtml(cfg[field.key] ?? field.placeholder ?? '') + '" placeholder="' + escHtml(field.placeholder || '') + '" ' +
+          'oninput="onToolConfigChange(\'' + tool.id + '\',\'' + field.key + '\',this.value)"></div>';
+      }
+      if (field.type === 'number') {
+        return '<div class="field" style="margin-bottom:8px"><label style="font-size:11px">' + field.label + '</label>' +
+          '<input type="number" min="' + (field.min||1) + '" max="' + (field.max||99) + '" data-tool="' + tool.id + '" data-key="' + field.key + '" ' +
+          'value="' + (cfg[field.key] ?? field.default ?? field.min ?? 1) + '" ' +
+          'oninput="onToolConfigChange(\'' + tool.id + '\',\'' + field.key + '\',+this.value)"></div>';
+      }
+      if (field.type === 'select') {
+        const opts = field.options.map(o =>
+          '<option value="' + escHtml(o.value) + '"' + (cfg[field.key]===o.value?' selected':'') + '>' + escHtml(o.label) + '</option>'
+        ).join('');
+        return '<div class="field" style="margin-bottom:8px"><label style="font-size:11px">' + field.label + '</label>' +
+          '<select data-tool="' + tool.id + '" data-key="' + field.key + '" onchange="onToolConfigChange(\'' + tool.id + '\',\'' + field.key + '\',this.value)">' + opts + '</select></div>';
+      }
+      if (field.type === 'account-select') {
+        const accs = _calAccounts || [];
+        const opts = '<option value="">— Automático —</option>' +
+          accs.map(a => '<option value="' + escHtml(a) + '"' + (cfg[field.key]===a?' selected':'') + '>' + escHtml(a) + '</option>').join('');
+        return '<div class="field" style="margin-bottom:8px"><label style="font-size:11px">' + field.label + '</label>' +
+          '<select data-tool="' + tool.id + '" data-key="' + field.key + '" onchange="onToolConfigChange(\'' + tool.id + '\',\'' + field.key + '\',this.value)">' + opts + '</select></div>';
+      }
+      if (field.type === 'multi-select') {
+        const selected = Array.isArray(cfg[field.key]) ? cfg[field.key] : (tool.defaultConfig?.[field.key] ?? []);
+        const chips = field.options.map(o => {
+          const isSel = selected.includes(o.value);
+          return '<label class="ms-chip ' + (isSel?'selected':'') + '" onclick="toggleMultiSelect(\'' + tool.id + '\',\'' + field.key + '\',\'' + o.value + '\',this)">' +
+            '<input type="checkbox" ' + (isSel?'checked':'') + '>' + escHtml(o.label) + '</label>';
+        }).join('');
+        return '<div class="field" style="margin-bottom:8px"><label style="font-size:11px">' + field.label + '</label>' +
+          '<div class="multi-select-grid">' + chips + '</div></div>';
+      }
+      if (field.type === 'textarea') {
+        return '<div class="field" style="margin-bottom:8px"><label style="font-size:11px">' + field.label + '</label>' +
+          '<textarea data-tool="' + tool.id + '" data-key="' + field.key + '" rows="3" placeholder="' + escHtml(field.placeholder||'') + '" ' +
+          'oninput="onToolConfigChange(\'' + tool.id + '\',\'' + field.key + '\',this.value)">' + escHtml(cfg[field.key]||'') + '</textarea></div>';
+      }
+      return '';
+    }).join('');
+
+    return '<div class="tool-row ' + (isOn?'enabled':'') + '" id="trow-' + tool.id + '">' +
+      '<div class="tool-row-head" onclick="toggleToolRow(\'' + tool.id + '\')">' +
+        '<span class="tool-row-emoji">' + tool.emoji + '</span>' +
+        '<span class="tool-row-name">' + tool.name + '</span>' +
+        '<span class="tool-row-desc">' + tool.description + '</span>' +
+        '<label class="toggle" style="flex-shrink:0" onclick="event.stopPropagation()">' +
+          '<input type="checkbox" id="tool-toggle-' + tool.id + '" ' + (isOn?'checked':'') + ' onchange="onToolToggle(\'' + tool.id + '\',this.checked)">' +
+          '<span class="slider"></span></label>' +
+      '</div>' +
+      (tool.configFields.length ? '<div class="tool-config" id="tcfg-' + tool.id + '" style="display:' + (isOn?'block':'none') + '">' + fieldsHtml + '</div>' : '') +
+    '</div>';
+  }).join('');
+}
+
+function toggleToolRow(toolId) {
+  const chk = document.getElementById('tool-toggle-' + toolId);
+  if (chk) { chk.checked = !chk.checked; onToolToggle(toolId, chk.checked); }
+}
+
+function onToolToggle(toolId, enabled) {
+  if (!_toolStates[toolId]) {
+    const def = _allTools.find(t => t.id === toolId);
+    _toolStates[toolId] = { enabled, config: structuredClone(def?.defaultConfig ?? {}) };
+  } else {
+    _toolStates[toolId].enabled = enabled;
+  }
+  const row = document.getElementById('trow-' + toolId);
+  if (row) row.classList.toggle('enabled', enabled);
+  const cfg = document.getElementById('tcfg-' + toolId);
+  if (cfg) cfg.style.display = enabled ? 'block' : 'none';
+}
+
+function onToolConfigChange(toolId, key, value) {
+  if (!_toolStates[toolId]) {
+    const def = _allTools.find(t => t.id === toolId);
+    _toolStates[toolId] = { enabled: true, config: structuredClone(def?.defaultConfig ?? {}) };
+  }
+  _toolStates[toolId].config[key] = value;
+}
+
+function toggleMultiSelect(toolId, key, value, labelEl) {
+  if (!_toolStates[toolId]) {
+    const def = _allTools.find(t => t.id === toolId);
+    _toolStates[toolId] = { enabled: true, config: structuredClone(def?.defaultConfig ?? {}) };
+  }
+  const arr = _toolStates[toolId].config[key] || [];
+  const idx = arr.indexOf(value);
+  if (idx === -1) arr.push(value);
+  else arr.splice(idx, 1);
+  _toolStates[toolId].config[key] = arr;
+  labelEl.classList.toggle('selected', idx === -1);
+  labelEl.querySelector('input').checked = idx === -1;
+}
+
+async function saveTask() {
+  const btn  = document.getElementById('modal-save-btn');
+  const name = document.getElementById('modal-name').value.trim();
+  if (!name) { showToast('El nombre de la tarea es requerido', false); return; }
+
+  const schedType = document.getElementById('modal-schedule-type').value;
+  const schedule  = { type: schedType };
+  if (schedType !== 'custom') {
+    schedule.time = document.getElementById('modal-time').value;
+  }
+  if (schedType === 'weekly') {
+    schedule.days = [...document.querySelectorAll('.day-chk')].filter(c => c.checked).map(c => +c.dataset.day);
+  }
+  if (schedType === 'custom') {
+    schedule.cron = document.getElementById('modal-cron').value.trim();
+  }
+
+  const tools = _allTools
+    .filter(t => _toolStates[t.id]?.enabled)
+    .map(t => ({ id: t.id, config: _toolStates[t.id]?.config ?? {} }));
+
+  const payload = {
+    name,
+    emoji:    document.getElementById('modal-emoji').value.trim() || '🤖',
+    phone:    document.getElementById('modal-phone').value.trim(),
+    schedule,
+    tools,
+    enabled:  true,
+  };
+
+  btn.disabled = true; btn.textContent = 'Guardando...';
+  try {
+    const taskId = document.getElementById('modal-task-id').value;
+    let r;
+    if (taskId) {
+      r = await fetch('/api/tasks/' + taskId, {
+        method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload),
+      }).then(r => r.json());
+    } else {
+      r = await fetch('/api/tasks', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload),
+      }).then(r => r.json());
+    }
+    if (r.error) { showToast('Error: ' + r.error, false); return; }
+    showToast('✅ Tarea guardada correctamente');
+    closeTaskModal();
+    loadTasks();
+  } catch { showToast('Error de conexión', false); }
+  finally { btn.disabled = false; btn.textContent = 'Guardar tarea'; }
+}
+
+// Close modal on overlay click
+document.getElementById('task-modal-overlay')?.addEventListener('click', function(e) {
+  if (e.target === this) closeTaskModal();
+});
 
 async function sendDashboardMessage() {
   const phoneEl = document.getElementById('send-phone');
