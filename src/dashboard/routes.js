@@ -648,11 +648,11 @@ input[type=text]:focus,input[type=time]:focus,select:focus{border-color:var(--ac
   </h2>
   <div class="card" style="margin-bottom:16px">
     <div class="card-title">✉️ <span>Enviar mensaje desde el dashboard</span></div>
-    <div class="grid-2">
-      <div class="field">
-        <label>Teléfono WhatsApp</label>
-        <input type="text" id="send-phone" placeholder="549XXXXXXXXXX" autocomplete="off">
-      </div>
+    <div class="field">
+      <label>Chat asociado</label>
+      <select id="send-phone" style="width:100%">
+        <option value="">Cargando chats...</option>
+      </select>
     </div>
     <div class="field">
       <label>Mensaje</label>
@@ -660,6 +660,12 @@ input[type=text]:focus,input[type=time]:focus,select:focus{border-color:var(--ac
     </div>
     <button class="btn btn-primary" id="send-message-btn" onclick="sendDashboardMessage()">Enviar y responder</button>
   </div>
+  <div class="msg-list" id="all-msgs">
+    <div class="empty">Esperando mensajes...</div>
+  </div>
+</div>
+
+<div class="tab-content" id="tab-calendar">
   <h2 style="font-size:18px;font-weight:700;color:#f1f5f9;margin-bottom:16px">📅 Calendario</h2>
 
   <!-- Filtros -->
@@ -943,6 +949,29 @@ async function loadStatus() {
         allEl.innerHTML = '';
         d.messages.slice(0, 50).forEach(m => allEl.appendChild(msgCard(m)));
       }
+      const sendPhone = document.getElementById('send-phone');
+      if (sendPhone) {
+        const uniquePhones = [];
+        d.messages.forEach(m => {
+          if (m.phone && !uniquePhones.includes(m.phone)) uniquePhones.push(m.phone);
+        });
+        if (uniquePhones.length) {
+          sendPhone.innerHTML = uniquePhones.map(phone => {
+            const mask = phone.slice(-4).padStart(phone.length, '*');
+            return '<option value="' + phone + '">' + mask + '</option>';
+          }).join('');
+          document.getElementById('send-message-btn').disabled = false;
+        } else {
+          sendPhone.innerHTML = '<option value="">No hay chats disponibles</option>';
+          document.getElementById('send-message-btn').disabled = true;
+        }
+      }
+    } else {
+      const sendPhone = document.getElementById('send-phone');
+      if (sendPhone) {
+        sendPhone.innerHTML = '<option value="">No hay chats disponibles</option>';
+        document.getElementById('send-message-btn').disabled = true;
+      }
     }
   } catch {
     document.getElementById('status-badge').textContent = '● Offline';
@@ -1176,7 +1205,7 @@ async function sendDashboardMessage() {
   const text = String(textEl?.value || '').trim();
 
   if (!phone || !text) {
-    showToast('Completa teléfono y mensaje', false);
+    showToast('Seleccioná un chat y escribí un mensaje', false);
     return;
   }
 

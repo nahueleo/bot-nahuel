@@ -78,6 +78,7 @@ const MAX_LOG_ENTRIES = 50;
 export async function logMessage(from, text, response, success) {
   const redis = await getRedisClient();
   const entry = JSON.stringify({
+    phone:     from,
     from:      from.slice(-4).padStart(10, '*'), // ocultar número completo
     text:      text.slice(0, 200),
     response:  response?.slice(0, 300),
