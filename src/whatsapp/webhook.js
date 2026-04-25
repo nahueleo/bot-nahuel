@@ -155,11 +155,14 @@ async function handleIncoming(body) {
 
   // Comando de dashboard: enviar link al panel de control
   const dashCmd = text.toLowerCase().replace(/[¿?!¡]/g, '').trim();
-  if (dashCmd === '/dashboard' || dashCmd === 'dashboard' || dashCmd === 'abrir dashboard'
-    || dashCmd === 'link dashboard' || dashCmd === 'ver dashboard') {
+  const isDashCmd =
+    /^\/?(dashboard|config(uraci[oó]n)?)$/.test(dashCmd) ||
+    /^(abrir|ver|ir al?|dame|mostrame|manda(me)?|env[ií]a(me)?|cu[aá]l es|c[oó]mo accedo)( (al?|el|la|mi))? ?(dashboard|config(uraci[oó]n)?|panel|url del? (bot|sistema|panel))/.test(dashCmd);
+
+  if (isDashCmd) {
     const url = `${config.publicUrl}/dashboard`;
     await sendWhatsAppMessage(from,
-      `🖥️ *Dashboard de tu bot*\n\n${url}\n\n_Podés ver mensajes, configurar tareas programadas, herramientas y más._`
+      `🖥️ *Dashboard de tu bot*\n\n${url}\n\n_Desde ahí podés ver mensajes, configurar tareas programadas, herramientas y más._`
     );
     return;
   }

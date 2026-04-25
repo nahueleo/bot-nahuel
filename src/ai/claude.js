@@ -7,6 +7,7 @@ import { scheduleReminder } from '../redis/reminders.js';
 import { getTemplate, listTemplates } from '../calendar/templates.js';
 import { searchEmails, getEmail, markAsRead, trashEmail, getUnreadCount } from '../gmail/client.js';
 import { listTaskLists, getTasks, createTask, updateTask, completeTask, deleteTask } from '../tasks/client.js';
+import { listConnectedAccounts } from '../auth/google.js';
 
 
 function buildSystemContent() {
@@ -15,7 +16,10 @@ function buildSystemContent() {
     weekday: 'long', year: 'numeric', month: 'long', day: 'numeric',
     hour: '2-digit', minute: '2-digit', hour12: false,
   });
+  const dashboardUrl = `${config.publicUrl}/dashboard`;
   return `Sos un asistente personal de productividad que gestiona el calendario, el correo y las tareas del usuario vía WhatsApp.
+
+🖥️ DASHBOARD: Si el usuario pregunta por el panel, configuración, la URL o cómo acceder, respondé con este link exacto: ${dashboardUrl}
 
 📅 CALENDARIO:
 - Crear eventos únicos o recurrentes
@@ -53,6 +57,13 @@ Reglas importantes:
 - ERRORES GENERALES: Si un tool retorna { error: "..." }, reportá el problema al usuario de forma clara y concisa. No inventes soluciones que no podés ejecutar.`;
 }
 
+/** Si el modelo no envió account_name, usa la primera cuenta conectada. */
+async function resolveAccount(provided) {
+  if (provided && provided !== 'undefined') return provided;
+  const accounts = await listConnectedAccounts().catch(() => []);
+  return accounts[0] ?? provided;
+}
+
 /**
  * Ejecuta la tool solicitada por el modelo.
  */
@@ -65,43 +76,54 @@ async function executeTool(name, args) {
       case 'list_calendars':
         return { calendars: await listAllCalendars() };
 
-      case 'get_events':
-        return { events: await getEvents(args.account_name, args.calendar_id, args.date_from, args.date_to) };
+      case 'get_events': {
+        const acct = await resolveAccount(args.account_name);
+        return { events: await getEvents(acct, args.calendar_id, args.date_from, args.date_to) };
+      }
 
-      case 'create_event':
-        return { event: await createEvent(args.account_name, args.calendar_id, {
+      case 'create_event': {
+        const acct = await resolveAccount(args.account_name);
+        return { event: await createEvent(acct, args.calendar_id, {
           summary: args.summary, start: args.start, end: args.end,
           description: args.description, attendees: args.attendees,
           location: args.location, timeZone: args.time_zone,
         }) };
+      }
 
-      case 'find_free_slots':
-        return { slots: await findFreeSlots(
-          args.account_name, args.calendar_id,
-          args.date_from, args.date_to, args.duration_minutes || 60,
-        ) };
+      case 'find_free_slots': {
+        const acct = await resolveAccount(args.account_name);
+        return { slots: await findFreeSlots(acct, args.calendar_id, args.date_from, args.date_to, args.duration_minutes || 60) };
+      }
 
-      case 'update_event':
-        return { event: await updateEvent(args.account_name, args.calendar_id, args.event_id, {
+      case 'update_event': {
+        const acct = await resolveAccount(args.account_name);
+        return { event: await updateEvent(acct, args.calendar_id, args.event_id, {
           summary: args.summary, start: args.start, end: args.end,
           description: args.description, attendees: args.attendees,
           location: args.location, timeZone: args.time_zone,
         }) };
+      }
 
-      case 'delete_event':
-        return { deleted: await deleteEvent(args.account_name, args.calendar_id, args.event_id) };
+      case 'delete_event': {
+        const acct = await resolveAccount(args.account_name);
+        return { deleted: await deleteEvent(acct, args.calendar_id, args.event_id) };
+      }
 
-      case 'create_recurring_event':
-        return { event: await createRecurringEvent(args.account_name, args.calendar_id, {
+      case 'create_recurring_event': {
+        const acct = await resolveAccount(args.account_name);
+        return { event: await createRecurringEvent(acct, args.calendar_id, {
           summary: args.summary, start: args.start, end: args.end,
           frequency: args.frequency, interval: args.interval, byDay: args.by_day,
           until: args.until, count: args.count,
           description: args.description, attendees: args.attendees,
           location: args.location, timeZone: args.time_zone,
         }) };
+      }
 
-      case 'search_events':
-        return { events: await searchEvents(args.account_name, args.calendar_id, args.query, args.date_from, args.date_to) };
+      case 'search_events': {
+        const acct = await resolveAccount(args.account_name);
+        return { events: await searchEvents(acct, args.calendar_id, args.query, args.date_from, args.date_to) };
+      }
 
       case 'schedule_reminder':
         const reminderTime = new Date(args.reminder_time);
@@ -110,48 +132,66 @@ async function executeTool(name, args) {
 
       // ─── Gmail ──────────────────────────────────────────────────────────────────
 
-      case 'search_emails':
-        return { emails: await searchEmails(args.account_name, args.query || '', args.max_results || 10) };
+      case 'search_emails': {
+        const acct = await resolveAccount(args.account_name);
+        return { emails: await searchEmails(acct, args.query || '', args.max_results || 10) };
+      }
 
-      case 'get_email':
-        return { email: await getEmail(args.account_name, args.message_id) };
+      case 'get_email': {
+        const acct = await resolveAccount(args.account_name);
+        return { email: await getEmail(acct, args.message_id) };
+      }
 
-      case 'mark_email_as_read':
-        return await markAsRead(args.account_name, args.message_id);
+      case 'mark_email_as_read': {
+        const acct = await resolveAccount(args.account_name);
+        return await markAsRead(acct, args.message_id);
+      }
 
-      case 'get_unread_count':
-        return await getUnreadCount(args.account_name);
+      case 'get_unread_count': {
+        const acct = await resolveAccount(args.account_name);
+        return await getUnreadCount(acct);
+      }
 
-      case 'trash_email':
-        return await trashEmail(args.account_name, args.message_id);
+      case 'trash_email': {
+        const acct = await resolveAccount(args.account_name);
+        return await trashEmail(acct, args.message_id);
+      }
 
       // ─── Google Tasks ────────────────────────────────────────────────────────────
 
-      case 'list_task_lists':
-        return { taskLists: await listTaskLists(args.account_name) };
+      case 'list_task_lists': {
+        const acct = await resolveAccount(args.account_name);
+        return { taskLists: await listTaskLists(acct) };
+      }
 
-      case 'get_tasks':
-        return { tasks: await getTasks(args.account_name, args.task_list_id || '@default', args.show_completed || false) };
+      case 'get_tasks': {
+        const acct = await resolveAccount(args.account_name);
+        return { tasks: await getTasks(acct, args.task_list_id || '@default', args.show_completed || false) };
+      }
 
-      case 'create_task':
-        return { task: await createTask(args.account_name, args.task_list_id || '@default', {
-          title: args.title,
-          notes: args.notes,
-          due:   args.due,
+      case 'create_task': {
+        const acct = await resolveAccount(args.account_name);
+        return { task: await createTask(acct, args.task_list_id || '@default', {
+          title: args.title, notes: args.notes, due: args.due,
         }) };
+      }
 
-      case 'update_task':
-        return { task: await updateTask(args.account_name, args.task_list_id || '@default', args.task_id, {
-          title: args.title,
-          notes: args.notes,
-          due:   args.due,
+      case 'update_task': {
+        const acct = await resolveAccount(args.account_name);
+        return { task: await updateTask(acct, args.task_list_id || '@default', args.task_id, {
+          title: args.title, notes: args.notes, due: args.due,
         }) };
+      }
 
-      case 'complete_task':
-        return await completeTask(args.account_name, args.task_list_id || '@default', args.task_id);
+      case 'complete_task': {
+        const acct = await resolveAccount(args.account_name);
+        return await completeTask(acct, args.task_list_id || '@default', args.task_id);
+      }
 
-      case 'delete_task':
-        return await deleteTask(args.account_name, args.task_list_id || '@default', args.task_id);
+      case 'delete_task': {
+        const acct = await resolveAccount(args.account_name);
+        return await deleteTask(acct, args.task_list_id || '@default', args.task_id);
+      }
 
       // ─── Plantillas ──────────────────────────────────────────────────────────────
 
