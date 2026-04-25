@@ -10,16 +10,24 @@ import { listTaskLists, getTasks, createTask, updateTask, completeTask, deleteTa
 import { listConnectedAccounts } from '../auth/google.js';
 
 
-function buildSystemContent() {
+async function buildSystemContent() {
   const nowART = new Date().toLocaleString('es-AR', {
     timeZone: 'America/Argentina/Buenos_Aires',
     weekday: 'long', year: 'numeric', month: 'long', day: 'numeric',
     hour: '2-digit', minute: '2-digit', hour12: false,
   });
   const dashboardUrl = `${config.publicUrl}/dashboard`;
+
+  // Inject connected Google accounts so the AI never asks about non-existent accounts
+  const connectedAccounts = await listConnectedAccounts().catch(() => []);
+  const accountsLine = connectedAccounts.length > 0
+    ? `\n🔑 CUENTAS DE GOOGLE CONECTADAS: ${connectedAccounts.join(', ')}. IMPORTANTE: solo usá estas cuentas en los tools. Si hay una sola cuenta, usala siempre sin preguntar. Si hay varias, solo preguntá cuál usar cuando el usuario lo especifique o sea ambiguo.`
+    : '\n⚠️ Sin cuentas de Google conectadas. Si el usuario quiere usar calendario, email o tareas, mandales el link de autenticación.';
+
   return `Sos un asistente personal de productividad que gestiona el calendario, el correo y las tareas del usuario vía WhatsApp.
 
 🖥️ DASHBOARD: Si el usuario pregunta por el panel, configuración, la URL o cómo acceder, respondé con este link exacto: ${dashboardUrl}
+${accountsLine}
 
 📅 CALENDARIO:
 - Crear eventos únicos o recurrentes
@@ -53,7 +61,7 @@ Reglas importantes:
 - Zona horaria del usuario: America/Argentina/Buenos_Aires (UTC-3). IMPORTANTE: cuando recibas fechas con offset como "T10:20:00Z" o "T10:20:00-03:00", siempre convertílas a la hora local del usuario antes de mostrarlas.
 - Mantené las respuestas concisas para WhatsApp (máximo 3-4 párrafos cortos).
 - Si el usuario escribe "reset" o "reiniciar", indicale que puede escribir ese comando para limpiar el historial.
-- ERRORES DE AUTENTICACIÓN: Si un tool retorna un objeto con "auth_required: true", significa que la cuenta de Google no está conectada o necesita reautorizarse (por ejemplo, para acceder a Tasks o Gmail que fueron agregados después). Respondé EXACTAMENTE con este formato (reemplazando los datos del resultado): "La cuenta '[nombre]' necesita autorizarse. Abrí este link: [auth_url]". Mandá el link tal cual, sin acortarlo ni modificarlo. No prometas resolver vos mismo el problema.
+- ERRORES DE AUTENTICACIÓN: Si un tool retorna un objeto con "auth_required: true", significa que la cuenta de Google no está conectada o necesita reautorizarse. Respondé EXACTAMENTE con este formato: "La cuenta '[nombre]' necesita autorizarse. Abrí este link: [auth_url]". Mandá el link tal cual, sin acortarlo ni modificarlo.
 - ERRORES GENERALES: Si un tool retorna { error: "..." }, reportá el problema al usuario de forma clara y concisa. No inventes soluciones que no podés ejecutar.`;
 }
 
@@ -401,7 +409,7 @@ export async function processMessage(userMessage, history, imageContent = null) 
       ]
     : userMessage;
 
-  const systemMsg = { role: 'system', content: buildSystemContent() };
+  const systemMsg = { role: 'system', content: await buildSystemContent() };
   const userMsg   = { role: 'user', content: typeof userContent === 'string' ? userContent : JSON.stringify(userContent) };
 
   // Recortar historial si el prompt estimado supera el budget de tokens
