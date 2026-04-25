@@ -1167,14 +1167,19 @@ async function loadChatList() {
     if (contactLabel) contactLabel.textContent = activePhone.slice(-4).padStart(activePhone.length, '*');
     if (switchBtn) switchBtn.style.display = chats.length > 1 ? 'inline-block' : 'none';
 
-    // Poblar picker
+    // Poblar picker con DOM puro (evita problemas de escaping en template literal)
     if (pickerList) {
-      pickerList.innerHTML = chats.map(phone => {
+      pickerList.innerHTML = '';
+      chats.forEach(phone => {
         const masked = phone.slice(-4).padStart(phone.length, '*');
-        return '<div onclick="selectChat(\'' + phone + '\')" style="padding:12px 14px;cursor:pointer;font-size:14px;color:#f1f5f9;border-bottom:1px solid rgba(255,255,255,.04);transition:background .1s" onmouseover="this.style.background=\'rgba(255,255,255,.05)\'" onmouseout="this.style.background=\'\'">' +
-          '<span style="font-size:16px;margin-right:10px">📱</span>' + masked +
-        '</div>';
-      }).join('');
+        const item = document.createElement('div');
+        item.style.cssText = 'padding:12px 14px;cursor:pointer;font-size:14px;color:#f1f5f9;border-bottom:1px solid rgba(255,255,255,.04);transition:background .1s';
+        item.innerHTML = '<span style="font-size:16px;margin-right:10px">📱</span>' + esc(masked);
+        item.addEventListener('click', () => selectChat(phone));
+        item.addEventListener('mouseover', () => { item.style.background = 'rgba(255,255,255,.05)'; });
+        item.addEventListener('mouseout', () => { item.style.background = ''; });
+        pickerList.appendChild(item);
+      });
     }
 
     await loadChatHistory(select.value);
