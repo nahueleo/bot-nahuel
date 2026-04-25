@@ -14,6 +14,7 @@ const app = express();
 // La opción `verify` de express.json() nos da el buffer crudo antes del parse,
 // necesario para verificar la firma HMAC de WhatsApp sin consumir el stream dos veces.
 app.use(express.json({
+  limit: '20mb',
   verify: (req, res, buf) => {
     req.rawBody = buf;
   },

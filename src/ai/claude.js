@@ -362,6 +362,7 @@ export async function processMessage(userMessage, history, imageContent = null) 
   let loops = 0;
   let currentMessages = [...messages];
   let triedWithoutImage = false;
+  let triedWithoutTools = false;
 
   while (loops <= MAX_LOOPS) {
     console.log(`[ai] loop ${loops}  msgs_en_contexto=${currentMessages.length}`);
@@ -399,6 +400,24 @@ export async function processMessage(userMessage, history, imageContent = null) 
         continue;
       }
 
+      // ── 400 sin body: provider rechaza tool history — reintentar sin tool msgs ──
+      const is400NoBody = err.status === 400 && !err.error && !err.error?.message;
+      if (is400NoBody && !triedWithoutTools) {
+        triedWithoutTools = true;
+        console.warn('[ai:retry] 400 sin body — probablemente incompatibilidad de tool history. Reintentando con historial limpio de tools.');
+        const stripped = currentMessages
+          .filter(m => m.role !== 'tool')
+          .map(m => {
+            if (m.tool_calls?.length) {
+              const { tool_calls, ...rest } = m;   // eslint-disable-line no-unused-vars
+              return { ...rest, content: rest.content || '' };
+            }
+            return m;
+          });
+        currentMessages = stripped;
+        continue;
+      }
+
       if (is402 && limitMatch) {
         const [, used, limit] = limitMatch;
         console.warn(`[ai:retry] 402 token limit (${used} > ${limit}). Reintentando con contexto mínimo.`);
@@ -415,7 +434,6 @@ export async function processMessage(userMessage, history, imageContent = null) 
             temperature: 0.3,
             max_tokens:  1024,
           });
-          // Si el retry funcionó, descartar historial para no volver a explotar
           currentMessages = minimalCtx;
           console.warn('[ai:retry] ✓ Respuesta OK con contexto mínimo (historial descartado).');
         } catch (retryErr) {
