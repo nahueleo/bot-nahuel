@@ -341,9 +341,9 @@ export async function processMessage(userMessage, history, imageContent = null) 
     ? [
         {
           type: 'image_url',
-          image_url: { url: imageContent.base64 },
+          image_url: { url: `data:${imageContent.mimeType};base64,${imageContent.base64}` },
         },
-        { type: 'text', text: userMessage },
+        { type: 'text', text: userMessage || 'Describí esta imagen' },
       ]
     : userMessage;
 
@@ -392,6 +392,7 @@ export async function processMessage(userMessage, history, imageContent = null) 
       const limitMatch = (err.error?.message || err.message || '').match(/(\d+) > (\d+)/);
       const isImageFailure = imageContent && !triedWithoutImage && (
         err.status === 404 ||
+        err.status === 400 ||   // Gemini/providers return 400 for bad or unsupported image format
         err.error?.code === 'invalid_image' ||
         /invalid(_|-)?image|image.*unsupported|unsupported.*image/i.test(err.message || '') ||
         /soporten entradas de imagen/i.test(err.message || '')
