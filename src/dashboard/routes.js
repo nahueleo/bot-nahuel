@@ -9,7 +9,7 @@ import { processMessage } from '../ai/claude.js';
 import { listAllCalendars, getEvents } from '../calendar/client.js';
 import { runTask } from '../tasks/task-executor.js';
 import { syncScheduler } from '../tasks/scheduler.js';
-import { getToolDescriptors } from '../tasks/tool-registry.js';
+import { getToolDescriptors, getToolById as getToolByIdRegistry } from '../tasks/tool-registry.js';
 import { searchEmails, getUnreadCount, markAsRead } from '../gmail/client.js';
 import { getTasks, completeTask, deleteTask } from '../tasks/client.js';
 
@@ -259,6 +259,18 @@ router.get('/api/reminders', async (req, res) => {
 // ─── API: tool descriptors ────────────────────────────────────────────────────
 router.get('/api/tools', (_req, res) => {
   res.json({ tools: getToolDescriptors() });
+});
+
+// ─── API: tool preview (run tool with given config, return formatted output) ──
+router.post('/api/tools/:id/preview', async (req, res) => {
+  const tool = getToolByIdRegistry(req.params.id);
+  if (!tool) return res.status(404).json({ error: 'Herramienta no encontrada' });
+  try {
+    const output = await tool.run(req.body?.config ?? {});
+    res.json({ ok: true, output: output || '(sin datos)' });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
 });
 
 // ─── API: tareas programadas — listado ────────────────────────────────────────
@@ -542,6 +554,19 @@ input[type=text]:focus,input[type=time]:focus,select:focus{border-color:var(--ac
 .tc-badge-free{background:#1a3a1a;color:#86efac}
 .tc-badge-google{background:#1e2d4a;color:#93c5fd}
 
+/* ── Tools tab ── */
+.tool-pills{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:20px}
+.tool-pill{display:flex;align-items:center;gap:6px;padding:7px 14px;border:1px solid var(--border);border-radius:20px;cursor:pointer;font-size:12px;font-weight:600;color:var(--muted);background:var(--surface2);transition:all .2s;user-select:none}
+.tool-pill:hover{border-color:var(--accent);color:var(--text)}
+.tool-pill.active{border-color:var(--accent);background:rgba(59,130,246,.15);color:#f1f5f9}
+.tool-detail{display:grid;grid-template-columns:300px 1fr;gap:20px;align-items:start}
+@media(max-width:900px){.tool-detail{grid-template-columns:1fr}}
+.tool-preview-box{background:var(--surface2);border:1px solid var(--border);border-radius:12px;padding:20px;min-height:200px;white-space:pre-wrap;font-size:13px;line-height:1.7;color:#e2e8f0;font-family:-apple-system,BlinkMacSystemFont,monospace}
+.tool-preview-empty{color:var(--muted);font-style:italic;text-align:center;padding:48px 0}
+.preview-loading{display:flex;align-items:center;justify-content:center;gap:10px;padding:48px 0;color:var(--muted);font-size:13px}
+.spin{display:inline-block;animation:spin 1s linear infinite;font-size:18px}
+@keyframes spin{to{transform:rotate(360deg)}}
+
 /* ── Task cards (multi-task UI) ── */
 .task-card{background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:18px 20px;margin-bottom:12px;transition:border-color .2s}
 .task-card:hover{border-color:rgba(59,130,246,.4)}
@@ -638,8 +663,9 @@ input[type=text]:focus,input[type=time]:focus,select:focus{border-color:var(--ac
 <!-- ── Sidebar ── -->
 <nav class="sidebar">
   <div class="nav-section">Principal</div>
-  <div class="nav-item active" data-tab="overview"><span class="nav-icon">📊</span> Dashboard</div>
-  <div class="nav-item" data-tab="tasks">          <span class="nav-icon">⚙️</span> Tareas programadas</div>
+  <div class="nav-item active" data-tab="overview">  <span class="nav-icon">📊</span> Dashboard</div>
+  <div class="nav-item" data-tab="tasks">            <span class="nav-icon">⚙️</span> Tareas programadas</div>
+  <div class="nav-item" data-tab="tools">            <span class="nav-icon">🛠️</span> Herramientas</div>
 
   <div class="nav-section">Conectores</div>
 
@@ -984,6 +1010,54 @@ input[type=text]:focus,input[type=time]:focus,select:focus{border-color:var(--ac
   </div>
 </div>
 
+<!-- ════════════════════ TAB: HERRAMIENTAS ════════════════════ -->
+<div class="tab-content" id="tab-tools">
+
+  <!-- Header -->
+  <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:20px;flex-wrap:wrap;gap:10px">
+    <h2 style="font-size:18px;font-weight:700;color:#f1f5f9">🛠️ Herramientas</h2>
+    <button class="btn btn-ghost" id="btn-tool-refresh" onclick="previewSelectedTool()">↻ Actualizar</button>
+  </div>
+
+  <!-- Pill selector — populated by JS -->
+  <div class="tool-pills" id="tool-pills"></div>
+
+  <!-- Detail: config + preview -->
+  <div class="tool-detail" id="tool-detail" style="display:none">
+
+    <!-- Config panel -->
+    <div class="card" style="margin-bottom:0">
+      <div class="card-title" id="tool-detail-title">⚙️ <span>Configuración</span></div>
+      <div id="tool-config-fields"></div>
+      <div style="margin-top:14px">
+        <button class="btn btn-primary" style="width:100%" onclick="previewSelectedTool()" id="btn-preview">
+          ▶ Ver datos ahora
+        </button>
+      </div>
+      <div style="margin-top:12px;padding-top:12px;border-top:1px solid var(--border)">
+        <div style="font-size:11px;color:var(--muted);margin-bottom:8px;font-weight:600;text-transform:uppercase;letter-spacing:.06em">Agregar a tarea</div>
+        <button class="btn btn-ghost" style="width:100%" onclick="goToTab('tasks')">+ Crear tarea con esta herramienta</button>
+      </div>
+    </div>
+
+    <!-- Preview panel -->
+    <div>
+      <div style="font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.07em;margin-bottom:10px;display:flex;align-items:center;gap:8px">
+        📱 Vista previa
+        <span id="preview-ts" style="font-weight:400;text-transform:none;letter-spacing:0"></span>
+      </div>
+      <div class="tool-preview-box" id="tool-preview-output">
+        <div class="tool-preview-empty">Seleccioná una herramienta y hacé clic en <strong>Ver datos ahora</strong></div>
+      </div>
+    </div>
+
+  </div>
+
+  <!-- Empty state while pills load -->
+  <div id="tools-loading" style="color:var(--muted);font-size:13px;padding:24px 0">Cargando herramientas...</div>
+
+</div>
+
 <!-- ════════════════════ TAB: SISTEMA ════════════════════ -->
 <div class="tab-content" id="tab-system">
   <h2 style="font-size:18px;font-weight:700;color:#f1f5f9;margin-bottom:20px">🔧 Sistema</h2>
@@ -1111,6 +1185,7 @@ function goToTab(id) {
   if (id === 'gmail') loadGmail();
   if (id === 'gtasks') loadGTasks();
   if (id === 'tasks') loadTasks();
+  if (id === 'tools') initToolsTab();
 }
 document.querySelectorAll('.nav-item[data-tab]').forEach(el => {
   el.addEventListener('click', () => { goToTab(el.dataset.tab); closeMenu(); });
@@ -1346,12 +1421,188 @@ async function renderToolsConnectorList() {
     const badge = isGoogle
       ? '<span class="tc-badge tc-badge-google">Google</span>'
       : '<span class="tc-badge tc-badge-free">libre</span>';
-    return '<div class="tool-connector-row" data-tab="tasks" onclick="goToTab(this.dataset.tab)">' +
+    return '<div class="tool-connector-row" data-id="' + escHtml(tool.id) + '" onclick="goToToolTab(this.dataset.id)">' +
       '<span class="tc-emoji">' + tool.emoji + '</span>' +
       '<span class="tc-name">' + tool.name + '</span>' +
       badge +
       '</div>';
   }).join('');
+}
+
+// ─── Tools tab ────────────────────────────────────────────────────────────────
+
+let _selectedToolId = null;
+let _toolPreviewConfig = {};
+
+async function initToolsTab() {
+  const pills   = document.getElementById('tool-pills');
+  const loading = document.getElementById('tools-loading');
+  const detail  = document.getElementById('tool-detail');
+  if (!pills) return;
+
+  const tools = await ensureTools();
+  if (loading) loading.style.display = 'none';
+
+  pills.innerHTML = tools.map(t =>
+    '<div class="tool-pill" data-id="' + escHtml(t.id) + '" onclick="selectTool(this.dataset.id)">' +
+      t.emoji + ' ' + t.name +
+    '</div>'
+  ).join('');
+
+  if (!_selectedToolId && tools.length) {
+    selectTool(tools[0].id);
+  } else if (_selectedToolId) {
+    selectTool(_selectedToolId);
+  }
+}
+
+function selectTool(toolId) {
+  _selectedToolId = toolId;
+  _toolPreviewConfig = {};
+
+  // Update pills
+  document.querySelectorAll('.tool-pill').forEach(p => {
+    p.classList.toggle('active', p.dataset.id === toolId);
+  });
+
+  const tool   = _allTools.find(t => t.id === toolId);
+  const detail = document.getElementById('tool-detail');
+  if (!tool || !detail) return;
+
+  detail.style.display = 'grid';
+
+  // Update title
+  const titleEl = document.getElementById('tool-detail-title');
+  if (titleEl) titleEl.innerHTML = tool.emoji + ' <span>' + tool.name + '</span>' +
+    '<span style="font-size:11px;font-weight:400;color:var(--muted);margin-left:8px;text-transform:none;letter-spacing:0">' + tool.description + '</span>';
+
+  // Seed config with defaults
+  _toolPreviewConfig = JSON.parse(JSON.stringify(tool.defaultConfig ?? {}));
+
+  // Render config fields
+  renderToolConfigFields(tool);
+
+  // Auto-preview
+  previewSelectedTool();
+}
+
+function renderToolConfigFields(tool) {
+  const container = document.getElementById('tool-config-fields');
+  if (!container) return;
+
+  if (!tool.configFields || !tool.configFields.length) {
+    container.innerHTML = '<p style="font-size:12px;color:var(--muted);padding:8px 0">Sin configuración requerida.</p>';
+    return;
+  }
+
+  container.innerHTML = tool.configFields.map(field => {
+    const cfg = _toolPreviewConfig;
+    const fid = 'tpf-' + tool.id + '-' + field.key;
+    const dataAttrs = 'data-tool="' + escHtml(tool.id) + '" data-key="' + escHtml(field.key) + '"';
+
+    if (field.type === 'text') {
+      return '<div class="field"><label>' + field.label + '</label>' +
+        '<input type="text" id="' + fid + '" ' + dataAttrs + ' value="' + escHtml(cfg[field.key] ?? '') + '" ' +
+        'placeholder="' + escHtml(field.placeholder || '') + '" ' +
+        'oninput="onPreviewConfigChange(this.dataset.tool,this.dataset.key,this.value)"></div>';
+    }
+    if (field.type === 'number') {
+      return '<div class="field"><label>' + field.label + '</label>' +
+        '<input type="number" id="' + fid + '" ' + dataAttrs + ' ' +
+        'min="' + (field.min||1) + '" max="' + (field.max||99) + '" ' +
+        'value="' + (cfg[field.key] ?? field.default ?? field.min ?? 1) + '" ' +
+        'oninput="onPreviewConfigChange(this.dataset.tool,this.dataset.key,+this.value)"></div>';
+    }
+    if (field.type === 'select') {
+      const opts = field.options.map(o =>
+        '<option value="' + escHtml(o.value) + '"' + (cfg[field.key]===o.value?' selected':'') + '>' + escHtml(o.label) + '</option>'
+      ).join('');
+      return '<div class="field"><label>' + field.label + '</label>' +
+        '<select id="' + fid + '" ' + dataAttrs + ' onchange="onPreviewConfigChange(this.dataset.tool,this.dataset.key,this.value)">' + opts + '</select></div>';
+    }
+    if (field.type === 'account-select') {
+      const accs = _calAccounts || [];
+      const opts = '<option value="">— Automático —</option>' +
+        accs.map(a => '<option value="' + escHtml(a) + '"' + (cfg[field.key]===a?' selected':'') + '>' + escHtml(a) + '</option>').join('');
+      return '<div class="field"><label>' + field.label + '</label>' +
+        '<select id="' + fid + '" ' + dataAttrs + ' onchange="onPreviewConfigChange(this.dataset.tool,this.dataset.key,this.value)">' + opts + '</select></div>';
+    }
+    if (field.type === 'multi-select') {
+      const selected = Array.isArray(cfg[field.key]) ? cfg[field.key] : (tool.defaultConfig?.[field.key] ?? []);
+      const chips = field.options.map(o => {
+        const isSel = selected.includes(o.value);
+        return '<label class="ms-chip ' + (isSel?'selected':'') + '" ' +
+          'data-tool="' + escHtml(tool.id) + '" data-key="' + escHtml(field.key) + '" data-val="' + escHtml(o.value) + '" ' +
+          'onclick="togglePreviewMulti(this.dataset.tool,this.dataset.key,this.dataset.val,this)">' +
+          '<input type="checkbox" ' + (isSel?'checked':'') + '>' + escHtml(o.label) + '</label>';
+      }).join('');
+      return '<div class="field"><label>' + field.label + '</label>' +
+        '<div class="multi-select-grid" style="margin-top:6px">' + chips + '</div></div>';
+    }
+    if (field.type === 'textarea') {
+      return '<div class="field"><label>' + field.label + '</label>' +
+        '<textarea id="' + fid + '" ' + dataAttrs + ' rows="3" ' +
+        'placeholder="' + escHtml(field.placeholder||'') + '" ' +
+        'oninput="onPreviewConfigChange(this.dataset.tool,this.dataset.key,this.value)">' +
+        escHtml(cfg[field.key]||'') + '</textarea></div>';
+    }
+    return '';
+  }).join('');
+}
+
+function onPreviewConfigChange(toolId, key, value) {
+  if (toolId === _selectedToolId) _toolPreviewConfig[key] = value;
+}
+
+function togglePreviewMulti(toolId, key, value, labelEl) {
+  if (toolId !== _selectedToolId) return;
+  const arr = _toolPreviewConfig[key] || [];
+  const idx = arr.indexOf(value);
+  if (idx === -1) arr.push(value); else arr.splice(idx, 1);
+  _toolPreviewConfig[key] = arr;
+  labelEl.classList.toggle('selected', idx === -1);
+  labelEl.querySelector('input').checked = idx === -1;
+}
+
+async function previewSelectedTool() {
+  if (!_selectedToolId) return;
+  const outputEl = document.getElementById('tool-preview-output');
+  const tsEl     = document.getElementById('preview-ts');
+  const btn      = document.getElementById('btn-preview');
+  if (!outputEl) return;
+
+  outputEl.innerHTML = '<div class="preview-loading"><span class="spin">⟳</span> Obteniendo datos...</div>';
+  if (btn) { btn.disabled = true; btn.textContent = '⏳ Cargando...'; }
+
+  try {
+    const r = await fetch('/api/tools/' + encodeURIComponent(_selectedToolId) + '/preview', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ config: _toolPreviewConfig }),
+    }).then(r => r.json());
+
+    if (r.error) {
+      outputEl.innerHTML = '<div style="color:var(--red);padding:20px 0">❌ ' + escHtml(r.error) + '</div>';
+    } else {
+      outputEl.textContent = r.output || '(sin datos)';
+    }
+    if (tsEl) tsEl.textContent = '· ' + new Date().toLocaleTimeString('es-AR', { hour:'2-digit', minute:'2-digit', second:'2-digit' });
+  } catch (e) {
+    outputEl.innerHTML = '<div style="color:var(--red);padding:20px 0">❌ Error de conexión</div>';
+  } finally {
+    if (btn) { btn.disabled = false; btn.textContent = '▶ Ver datos ahora'; }
+  }
+}
+
+function goToToolTab(toolId) {
+  goToTab('tools');
+  if (toolId) {
+    if (_allTools.length) {
+      selectTool(toolId);
+    } else {
+      ensureTools().then(() => selectTool(toolId));
+    }
+  }
 }
 
 async function loadChatHistory(phone) {
