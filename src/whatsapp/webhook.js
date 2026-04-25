@@ -153,6 +153,17 @@ async function handleIncoming(body) {
     return;
   }
 
+  // Comando de dashboard: enviar link al panel de control
+  const dashCmd = text.toLowerCase().replace(/[¿?!¡]/g, '').trim();
+  if (dashCmd === '/dashboard' || dashCmd === 'dashboard' || dashCmd === 'abrir dashboard'
+    || dashCmd === 'link dashboard' || dashCmd === 'ver dashboard') {
+    const url = `${config.publicUrl}/dashboard`;
+    await sendWhatsAppMessage(from,
+      `🖥️ *Dashboard de tu bot*\n\n${url}\n\n_Podés ver mensajes, configurar tareas programadas, herramientas y más._`
+    );
+    return;
+  }
+
   // Obtener historial previo
   const history = await getHistory(from);
 
