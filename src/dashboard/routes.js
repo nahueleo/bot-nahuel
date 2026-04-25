@@ -381,48 +381,6 @@ input[type=text],input[type=time],select,textarea,input[type=file]{
   transition:border-color .15s;width:100%
 }
 
-.chat-thread{
-  max-height:calc(100vh - 320px);
-  overflow-y:auto;
-  display:flex;
-  flex-direction:column;
-  gap:10px;
-  padding:12px;
-  border:1px solid var(--border);
-  border-radius:14px;
-  background:rgba(15,23,42,.9);
-}
-.chat-bubble{
-  max-width:75%;
-  padding:12px 14px;
-  border-radius:18px;
-  position:relative;
-  line-height:1.5;
-  word-break: break-word;
-}
-.chat-bubble.user{
-  align-self:flex-end;
-  background:linear-gradient(135deg, rgba(59,130,246,.9), rgba(125,211,252,.14));
-  color:#f8fafc;
-  border:1px solid rgba(96,165,250,.4);
-}
-.chat-bubble.bot{
-  align-self:flex-start;
-  background:rgba(255,255,255,.06);
-  color:#e2e8f0;
-  border:1px solid rgba(148,163,184,.2);
-}
-.chat-bubble .bubble-meta{
-  margin-top:8px;
-  font-size:11px;
-  color:var(--muted);
-  text-align:right;
-}
-.chat-bubble img{
-  max-width:100%;
-  border-radius:12px;
-  margin-top:8px;
-}
 input[type=text]:focus,input[type=time]:focus,select:focus{border-color:var(--accent)}
 .field{margin-bottom:12px}
 .field label{display:block;font-size:11px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;margin-bottom:6px}
@@ -514,8 +472,15 @@ input[type=text]:focus,input[type=time]:focus,select:focus{border-color:var(--ac
   .grid-3{grid-template-columns:1fr}
 }
 
+/* ── Sidebar sub-items & connectors ── */
+.nav-connector{display:flex;align-items:center;gap:10px;padding:10px 18px;font-size:13px;font-weight:500;color:var(--muted);cursor:pointer;transition:all .15s;border-left:3px solid transparent}
+.nav-connector:hover{background:var(--surface2);color:var(--text)}
+.nav-subitem{padding:8px 18px 8px 42px !important;font-size:12px}
+.nav-subitem:first-child{padding-top:4px !important}
+.nav-subitem:last-child{padding-bottom:8px !important}
+
 /* ── WhatsApp Messages Tab ── */
-#tab-messages.active{display:flex!important;flex-direction:column;height:100%;overflow:hidden}
+#tab-messages.active{display:flex!important;flex-direction:column;height:100%;overflow:hidden;position:relative}
 .wa-header{background:var(--surface);border-bottom:1px solid var(--border);padding:12px 18px;display:flex;align-items:center;gap:12px;flex-shrink:0}
 .wa-avatar{width:42px;height:42px;border-radius:50%;background:linear-gradient(135deg,#25D366,#128C7E);display:flex;align-items:center;justify-content:center;font-size:20px;flex-shrink:0;box-shadow:0 2px 8px rgba(37,211,102,.3)}
 .wa-header-info{flex:1;min-width:0}
@@ -584,19 +549,38 @@ input[type=text]:focus,input[type=time]:focus,select:focus{border-color:var(--ac
 <!-- ── Sidebar ── -->
 <nav class="sidebar">
   <div class="nav-section">Principal</div>
-  <div class="nav-item active" data-tab="overview">   <span class="nav-icon">📊</span> Dashboard</div>
-  <div class="nav-item" data-tab="tasks">             <span class="nav-icon">⚙️</span> Tareas programadas</div>
-  <div class="nav-item" data-tab="messages">          <span class="nav-icon">💬</span> Mensajes</div>
-  <div class="nav-section">Google</div>
-  <div class="nav-item" data-tab="calendar">          <span class="nav-icon">📅</span> Calendario</div>
-  <div class="nav-item" data-tab="gmail">             <span class="nav-icon">📧</span> Gmail</div>
-  <div class="nav-item" data-tab="gtasks">            <span class="nav-icon">✅</span> Google Tasks</div>
+  <div class="nav-item active" data-tab="overview"><span class="nav-icon">📊</span> Dashboard</div>
+  <div class="nav-item" data-tab="messages">       <span class="nav-icon">💬</span> Mensajes</div>
+  <div class="nav-item" data-tab="tasks">          <span class="nav-icon">⚙️</span> Tareas programadas</div>
+
+  <div class="nav-section">Conectores</div>
+
+  <!-- WhatsApp -->
+  <div class="nav-item nav-connector" id="nav-whatsapp" onclick="goToTab('messages')">
+    <span class="nav-icon">📱</span>
+    <span style="flex:1">WhatsApp</span>
+    <span id="wa-conn-badge" style="font-size:10px;padding:2px 7px;border-radius:10px;background:#14532d;color:#86efac;font-weight:600">online</span>
+  </div>
+
+  <!-- Google (expandible) -->
+  <div class="nav-item nav-connector" id="nav-google-header" onclick="toggleGoogleMenu()">
+    <span class="nav-icon">🔵</span>
+    <span style="flex:1">Google</span>
+    <span id="google-expand-icon" style="font-size:11px;color:var(--muted);transition:transform .2s">▶</span>
+  </div>
+  <div id="google-submenu" style="display:none;overflow:hidden">
+    <div class="nav-item nav-subitem" data-tab="gmail">      <span class="nav-icon" style="font-size:13px">📧</span> Gmail</div>
+    <div class="nav-item nav-subitem" data-tab="calendar">   <span class="nav-icon" style="font-size:13px">📅</span> Calendario</div>
+    <div class="nav-item nav-subitem" data-tab="gtasks">     <span class="nav-icon" style="font-size:13px">✅</span> Google Tasks</div>
+  </div>
+  <div id="google-configure" style="display:none;padding:4px 12px 8px">
+    <a href="/auth/google?account=nueva" class="btn btn-ghost" style="justify-content:center;width:100%;font-size:12px">+ Conectar Google</a>
+  </div>
+
   <div class="nav-section">Sistema</div>
-  <div class="nav-item" data-tab="system">            <span class="nav-icon">🔧</span> Sistema</div>
-  <div class="nav-section">Acciones</div>
-  <div style="padding:0 12px;display:flex;flex-direction:column;gap:6px">
-    <a href="/auth/google?account=nueva" class="btn btn-ghost" style="justify-content:center;width:100%">+ Conectar cuenta</a>
-    <a href="/health" target="_blank" class="btn btn-ghost" style="justify-content:center;width:100%">💚 Health</a>
+  <div class="nav-item" data-tab="system"><span class="nav-icon">🔧</span> Sistema</div>
+  <div style="padding:8px 12px">
+    <a href="/health" target="_blank" class="btn btn-ghost" style="justify-content:center;width:100%;font-size:12px">💚 Health</a>
   </div>
 </nav>
 
@@ -759,9 +743,9 @@ input[type=text]:focus,input[type=time]:focus,select:focus{border-color:var(--ac
     <div class="wa-avatar">💬</div>
     <div class="wa-header-info">
       <div class="wa-contact-name-wrap">
-        <select id="send-phone" class="wa-phone-sel" onchange="onChatChange(this.value)">
-          <option value="">Seleccioná un chat...</option>
-        </select>
+        <span id="wa-active-contact" style="font-size:15px;font-weight:600;color:#f1f5f9">Sin chat</span>
+        <button id="wa-switch-btn" onclick="toggleChatPicker()" title="Cambiar contacto"
+          style="display:none;background:rgba(255,255,255,.08);border:none;border-radius:6px;color:var(--muted);cursor:pointer;font-size:11px;padding:3px 8px;margin-left:6px">▼</button>
       </div>
       <div class="wa-contact-status">
         <span class="dot dot-green dot-pulse" style="width:7px;height:7px;flex-shrink:0"></span>
@@ -769,6 +753,13 @@ input[type=text]:focus,input[type=time]:focus,select:focus{border-color:var(--ac
       </div>
     </div>
   </div>
+  <!-- Chat picker overlay (múltiples contactos) -->
+  <div id="wa-chat-picker" style="display:none;position:absolute;top:70px;left:16px;right:16px;background:var(--surface2);border:1px solid var(--border);border-radius:12px;z-index:50;overflow:hidden;box-shadow:0 8px 24px rgba(0,0,0,.4)">
+    <div style="padding:10px 14px;font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;border-bottom:1px solid var(--border)">Contactos</div>
+    <div id="wa-chat-picker-list"></div>
+  </div>
+  <!-- Hidden select para controlar el valor activo -->
+  <select id="send-phone" style="display:none"></select>
   <!-- Área de mensajes -->
   <div class="wa-messages" id="chat-thread">
     <div class="wa-empty">
@@ -1013,6 +1004,7 @@ function goToTab(id) {
     panel.style.overflow = '';
     panel.style.padding = '';
   }
+  if (id === 'messages') loadChatList();
   if (id === 'calendar') loadCalendar();
   if (id === 'gmail') loadGmail();
   if (id === 'gtasks') loadGTasks();
@@ -1043,13 +1035,17 @@ setInterval(() => {
 const sse = new EventSource('/api/events');
 sse.addEventListener('message', e => {
   const m = JSON.parse(e.data);
-  ['all-msgs', 'overview-msgs'].forEach(id => {
-    const el = document.getElementById(id);
-    if (!el) return;
-    if (el.querySelector('.empty')) el.innerHTML = '';
-    el.prepend(msgCard(m, true));
-    while (el.children.length > 50) el.lastChild.remove();
-  });
+  const ovEl = document.getElementById('overview-msgs');
+  if (ovEl) {
+    if (ovEl.querySelector('.empty')) ovEl.innerHTML = '';
+    ovEl.prepend(msgCard(m, true));
+    while (ovEl.children.length > 50) ovEl.lastChild.remove();
+  }
+  // Refresh active chat thread on any new message
+  const phone = document.getElementById('send-phone')?.value;
+  if (phone && document.getElementById('tab-messages')?.classList.contains('active')) {
+    loadChatHistory(phone);
+  }
 });
 
 // ── Metrics ───────────────────────────────────────────────────────────────
@@ -1114,15 +1110,22 @@ async function loadStatus() {
     populateSel('gmail-account-sel');
     populateSel('gtasks-account-sel');
 
-    // Messages — populate both overview preview and full messages tab
+    // Sidebar: mostrar/ocultar Google según si hay cuentas configuradas
+    const googleSub = document.getElementById('google-submenu');
+    const googleConf = document.getElementById('google-configure');
+    const googleIcon = document.getElementById('google-expand-icon');
+    if (accs.length > 0) {
+      if (googleConf) googleConf.style.display = 'none';
+      if (googleSub) { googleSub.style.display = 'block'; if (googleIcon) googleIcon.style.transform = 'rotate(90deg)'; }
+    } else {
+      if (googleSub) googleSub.style.display = 'none';
+      if (googleConf) googleConf.style.display = 'block';
+    }
+
+    // Overview messages preview
     if (d.messages?.length) {
       const ovEl = document.getElementById('overview-msgs');
       if (ovEl) { ovEl.innerHTML = ''; d.messages.slice(0, 5).forEach(m => ovEl.appendChild(msgCard(m))); }
-      const allEl = document.getElementById('all-msgs');
-      if (allEl && allEl.querySelector('.empty')) {
-        allEl.innerHTML = '';
-        d.messages.slice(0, 50).forEach(m => allEl.appendChild(msgCard(m)));
-      }
     }
     await loadChatList();
   } catch (err) {
@@ -1140,26 +1143,68 @@ async function loadChatList() {
     const data = await fetch('/api/chats').then(r => r.json());
     const select = document.getElementById('send-phone');
     const btn = document.getElementById('send-message-btn');
+    const contactLabel = document.getElementById('wa-active-contact');
+    const switchBtn = document.getElementById('wa-switch-btn');
+    const pickerList = document.getElementById('wa-chat-picker-list');
     if (!select) return;
 
     const chats = data.chats || [];
     if (!chats.length) {
-      select.innerHTML = '<option value="">No hay chats disponibles</option>';
+      select.innerHTML = '<option value="">Sin chats</option>';
       if (btn) btn.disabled = true;
+      if (contactLabel) contactLabel.textContent = 'Sin contactos';
       renderChatHistory([]);
       return;
     }
 
-    select.innerHTML = chats.map(phone => {
-      const mask = phone.slice(-4).padStart(phone.length, '*');
-      return '<option value="' + phone + '">' + mask + '</option>';
-    }).join('');
+    const prevValue = select.value;
+    select.innerHTML = chats.map(c => '<option value="' + c + '">' + c + '</option>').join('');
+    if (prevValue && chats.includes(prevValue)) select.value = prevValue;
     if (btn) btn.disabled = false;
-    select.onchange = () => loadChatHistory(select.value);
+
+    // Actualizar header con número enmascarado
+    const activePhone = select.value;
+    if (contactLabel) contactLabel.textContent = activePhone.slice(-4).padStart(activePhone.length, '*');
+    if (switchBtn) switchBtn.style.display = chats.length > 1 ? 'inline-block' : 'none';
+
+    // Poblar picker
+    if (pickerList) {
+      pickerList.innerHTML = chats.map(phone => {
+        const masked = phone.slice(-4).padStart(phone.length, '*');
+        return '<div onclick="selectChat(\'' + phone + '\')" style="padding:12px 14px;cursor:pointer;font-size:14px;color:#f1f5f9;border-bottom:1px solid rgba(255,255,255,.04);transition:background .1s" onmouseover="this.style.background=\'rgba(255,255,255,.05)\'" onmouseout="this.style.background=\'\'">' +
+          '<span style="font-size:16px;margin-right:10px">📱</span>' + masked +
+        '</div>';
+      }).join('');
+    }
+
     await loadChatHistory(select.value);
   } catch (err) {
     console.error('Error cargando chats:', err);
   }
+}
+
+function selectChat(phone) {
+  const select = document.getElementById('send-phone');
+  const label = document.getElementById('wa-active-contact');
+  if (select) select.value = phone;
+  if (label) label.textContent = phone.slice(-4).padStart(phone.length, '*');
+  toggleChatPicker(false);
+  loadChatHistory(phone);
+}
+
+function toggleChatPicker(force) {
+  const picker = document.getElementById('wa-chat-picker');
+  if (!picker) return;
+  const show = force !== undefined ? force : picker.style.display === 'none';
+  picker.style.display = show ? 'block' : 'none';
+}
+
+function toggleGoogleMenu() {
+  const sub = document.getElementById('google-submenu');
+  const icon = document.getElementById('google-expand-icon');
+  const isOpen = sub.style.display !== 'none';
+  sub.style.display = isOpen ? 'none' : 'block';
+  if (icon) icon.style.transform = isOpen ? '' : 'rotate(90deg)';
 }
 
 async function loadChatHistory(phone) {
@@ -1407,7 +1452,6 @@ async function sendDashboardMessage() {
   }
 
   btn.disabled = true;
-  btn.textContent = '⏳ Enviando...';
 
   let image = null;
   if (file) {
@@ -1438,13 +1482,13 @@ async function sendDashboardMessage() {
 
     showToast('✅ Mensaje enviado y bot respondió');
     textEl.value = '';
-    if (imageEl) imageEl.value = '';
+    textEl.style.height = '';
+    clearFileInput();
     await loadChatHistory(phone);
   } catch (err) {
     showToast('Error de conexión', false);
   } finally {
     btn.disabled = false;
-    btn.textContent = 'Enviar y responder';
   }
 }
 
@@ -1604,9 +1648,53 @@ async function deleteGTask(account, taskId, btn) {
   } catch { showToast('Error', false); btn.disabled = false; }
 }
 
+// ── WhatsApp chat helpers ─────────────────────────────────────────────────
+function onChatChange(phone) {
+  const label = document.getElementById('wa-active-contact');
+  if (label && phone) label.textContent = phone.slice(-4).padStart(phone.length, '*');
+  toggleChatPicker(false);
+  loadChatHistory(phone);
+}
+
+function autoResize(el) {
+  el.style.height = 'auto';
+  el.style.height = Math.min(el.scrollHeight, 120) + 'px';
+}
+
+function onFileSelected(input) {
+  const preview = document.getElementById('wa-file-preview');
+  if (!preview) return;
+  if (input.files && input.files[0]) {
+    preview.style.display = 'flex';
+    preview.innerHTML =
+      '📎 <span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' +
+      esc(input.files[0].name) + '</span>' +
+      '<span class="wa-file-preview-x" onclick="clearFileInput()">✕</span>';
+  } else {
+    preview.style.display = 'none';
+    preview.innerHTML = '';
+  }
+}
+
+function clearFileInput() {
+  const input = document.getElementById('send-image');
+  if (input) input.value = '';
+  const preview = document.getElementById('wa-file-preview');
+  if (preview) { preview.style.display = 'none'; preview.innerHTML = ''; }
+}
+
 function esc(s) {
   return String(s || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
 }
+
+// ── Close pickers on outside click ────────────────────────────────────────
+document.addEventListener('click', (e) => {
+  const picker = document.getElementById('wa-chat-picker');
+  const switchBtn = document.getElementById('wa-switch-btn');
+  if (picker && picker.style.display !== 'none' && !picker.contains(e.target) && e.target !== switchBtn) {
+    picker.style.display = 'none';
+  }
+});
 
 // ── Init & polling ────────────────────────────────────────────────────────
 async function refreshAll() {

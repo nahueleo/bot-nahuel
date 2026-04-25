@@ -295,6 +295,7 @@ function normalizeMessageForProvider(msg) {
   if (msg.tool_calls) {
     normalized.tool_calls = msg.tool_calls.map((tc) => ({
       id: tc.id,
+      type: 'function',
       function: {
         name: tc.function?.name,
         arguments: tc.function?.arguments,
