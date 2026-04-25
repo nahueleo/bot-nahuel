@@ -533,6 +533,15 @@ input[type=text]:focus,input[type=time]:focus,select:focus{border-color:var(--ac
 .nav-subitem:first-child{padding-top:4px !important}
 .nav-subitem:last-child{padding-bottom:8px !important}
 
+/* ── Sidebar tool rows ── */
+.tool-connector-row{display:flex;align-items:center;gap:8px;padding:7px 18px 7px 28px;font-size:12px;font-weight:500;color:var(--muted);cursor:pointer;transition:all .15s}
+.tool-connector-row:hover{background:var(--surface2);color:var(--text)}
+.tool-connector-row .tc-emoji{font-size:14px;width:20px;text-align:center;flex-shrink:0}
+.tool-connector-row .tc-name{flex:1}
+.tc-badge{font-size:10px;padding:2px 6px;border-radius:8px;font-weight:600;white-space:nowrap}
+.tc-badge-free{background:#1a3a1a;color:#86efac}
+.tc-badge-google{background:#1e2d4a;color:#93c5fd}
+
 /* ── Task cards (multi-task UI) ── */
 .task-card{background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:18px 20px;margin-bottom:12px;transition:border-color .2s}
 .task-card:hover{border-color:rgba(59,130,246,.4)}
@@ -654,6 +663,21 @@ input[type=text]:focus,input[type=time]:focus,select:focus{border-color:var(--ac
   </div>
   <div id="google-configure" style="display:none;padding:4px 12px 8px">
     <a href="/auth/google?account=nueva" class="btn btn-ghost" style="justify-content:center;width:100%;font-size:12px">+ Conectar Google</a>
+  </div>
+
+  <!-- Herramientas para tareas programadas -->
+  <div class="nav-item nav-connector" id="nav-tools-header" onclick="toggleToolsMenu()">
+    <span class="nav-icon">🛠️</span>
+    <span style="flex:1">Herramientas</span>
+    <span id="tools-expand-icon" style="font-size:11px;color:var(--muted);transition:transform .2s">▶</span>
+  </div>
+  <div id="tools-submenu" style="display:none;overflow:hidden;padding:4px 0">
+    <div id="tools-connector-list">
+      <!-- populated by JS -->
+    </div>
+    <div style="padding:4px 12px 6px">
+      <button onclick="goToTab('tasks')" class="btn btn-ghost" style="justify-content:center;width:100%;font-size:12px">+ Nueva tarea →</button>
+    </div>
   </div>
 
   <div class="nav-section">Sistema</div>
@@ -1298,6 +1322,36 @@ function toggleGoogleMenu() {
   const isOpen = sub.style.display !== 'none';
   sub.style.display = isOpen ? 'none' : 'block';
   if (icon) icon.style.transform = isOpen ? '' : 'rotate(90deg)';
+}
+
+function toggleToolsMenu() {
+  const sub  = document.getElementById('tools-submenu');
+  const icon = document.getElementById('tools-expand-icon');
+  const isOpen = sub.style.display !== 'none';
+  sub.style.display = isOpen ? 'none' : 'block';
+  if (icon) icon.style.transform = isOpen ? '' : 'rotate(90deg)';
+  if (!isOpen) renderToolsConnectorList();
+}
+
+const GOOGLE_TOOLS = new Set(['calendar','gmail','gtasks']);
+
+async function renderToolsConnectorList() {
+  const listEl = document.getElementById('tools-connector-list');
+  if (!listEl) return;
+  const tools = await ensureTools();
+  if (!tools.length) { listEl.innerHTML = '<div class="empty" style="padding:8px 18px;font-size:11px">Sin herramientas</div>'; return; }
+
+  listEl.innerHTML = tools.map(tool => {
+    const isGoogle = GOOGLE_TOOLS.has(tool.id);
+    const badge = isGoogle
+      ? '<span class="tc-badge tc-badge-google">Google</span>'
+      : '<span class="tc-badge tc-badge-free">libre</span>';
+    return '<div class="tool-connector-row" data-tab="tasks" onclick="goToTab(this.dataset.tab)">' +
+      '<span class="tc-emoji">' + tool.emoji + '</span>' +
+      '<span class="tc-name">' + tool.name + '</span>' +
+      badge +
+      '</div>';
+  }).join('');
 }
 
 async function loadChatHistory(phone) {
