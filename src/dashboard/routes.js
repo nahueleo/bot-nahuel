@@ -1153,6 +1153,7 @@ async function loadStatus() {
 
 // ── Calendar & Reminders ──────────────────────────────────────────────────
 let _calAccounts = [];
+let _chatListLoaded = false;
 
 async function loadChatList() {
   try {
@@ -1245,7 +1246,8 @@ async function loadChatHistory(phone) {
       return;
     }
     const data = await fetch('/api/messages/log?phone=' + encodeURIComponent(phone)).then(r => r.json());
-    renderChatHistory(data.logs || []);
+    // El log viene newest-first (lPush), invertir para mostrar cronológicamente
+    renderChatHistory((data.logs || []).slice().reverse());
   } catch (err) {
     console.error('Error cargando historial de chat:', err);
   }
