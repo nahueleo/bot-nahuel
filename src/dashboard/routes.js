@@ -1414,7 +1414,7 @@ async function loadTasks() {
     // ── Overview card ──
     if (ovCard) {
       if (!tasks?.length) {
-        ovCard.innerHTML = '<div style="color:var(--muted);font-size:13px;padding:4px 0">Sin tareas aún. <a href="#" onclick="goToTab(\'tasks\');return false">Crear una →</a></div>';
+        ovCard.innerHTML = '<div style="color:var(--muted);font-size:13px;padding:4px 0">Sin tareas aún. <a href="#" onclick="goToTab(this.dataset.t)" data-t="tasks">Crear una →</a></div>';
       } else {
         const enabled = tasks.filter(t => t.enabled);
         ovCard.innerHTML = tasks.slice(0,3).map(t =>
@@ -1705,7 +1705,7 @@ function toggleToolRow(toolId) {
 function onToolToggle(toolId, enabled) {
   if (!_toolStates[toolId]) {
     const def = _allTools.find(t => t.id === toolId);
-    _toolStates[toolId] = { enabled, config: structuredClone(def?.defaultConfig ?? {}) };
+    _toolStates[toolId] = { enabled, config: JSON.parse(JSON.stringify(def?.defaultConfig ?? {})) };
   } else {
     _toolStates[toolId].enabled = enabled;
   }
@@ -1718,7 +1718,7 @@ function onToolToggle(toolId, enabled) {
 function onToolConfigChange(toolId, key, value) {
   if (!_toolStates[toolId]) {
     const def = _allTools.find(t => t.id === toolId);
-    _toolStates[toolId] = { enabled: true, config: structuredClone(def?.defaultConfig ?? {}) };
+    _toolStates[toolId] = { enabled: true, config: JSON.parse(JSON.stringify(def?.defaultConfig ?? {})) };
   }
   _toolStates[toolId].config[key] = value;
 }
@@ -1726,7 +1726,7 @@ function onToolConfigChange(toolId, key, value) {
 function toggleMultiSelect(toolId, key, value, labelEl) {
   if (!_toolStates[toolId]) {
     const def = _allTools.find(t => t.id === toolId);
-    _toolStates[toolId] = { enabled: true, config: structuredClone(def?.defaultConfig ?? {}) };
+    _toolStates[toolId] = { enabled: true, config: JSON.parse(JSON.stringify(def?.defaultConfig ?? {})) };
   }
   const arr = _toolStates[toolId].config[key] || [];
   const idx = arr.indexOf(value);
