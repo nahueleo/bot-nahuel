@@ -454,3 +454,30 @@ export const toolDeclarations = [
     },
   },
 ];
+
+// ─── Tool selection by domain ──────────────────────────────────────────────────
+
+const CALENDAR_NAMES = new Set([
+  'list_calendars', 'get_events', 'create_event', 'find_free_slots',
+  'update_event', 'delete_event', 'create_recurring_event', 'search_events',
+  'schedule_reminder', 'create_event_from_template',
+]);
+const GMAIL_NAMES = new Set([
+  'search_emails', 'get_email', 'mark_email_as_read', 'get_unread_count', 'trash_email',
+]);
+const TASKS_NAMES = new Set([
+  'list_task_lists', 'get_tasks', 'create_task', 'update_task', 'complete_task', 'delete_task',
+]);
+
+const DOMAIN_TOOLS = { calendar: CALENDAR_NAMES, gmail: GMAIL_NAMES, tasks: TASKS_NAMES };
+
+/**
+ * Returns only the tool declarations needed for the given domains.
+ * Pass an empty array to get no tools (pure text response).
+ * Pass ['calendar','gmail','tasks'] to get all tools.
+ */
+export function selectTools(domains) {
+  if (!domains || domains.length === 0) return [];
+  const names = new Set(domains.flatMap(d => [...(DOMAIN_TOOLS[d] ?? [])]));
+  return toolDeclarations.filter(t => names.has(t.function.name));
+}

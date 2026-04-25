@@ -1,6 +1,7 @@
 import { keyManager } from './key-manager.js';
 import { config } from '../config/index.js';
-import { toolDeclarations } from './tools.js';
+import { selectTools } from './tools.js';
+import { classifyIntent } from './intent.js';
 import { listAllCalendars, getEvents, createEvent, findFreeSlots, updateEvent, deleteEvent, createRecurringEvent, searchEvents } from '../calendar/client.js';
 import { scheduleReminder } from '../redis/reminders.js';
 import { getTemplate, listTemplates } from '../calendar/templates.js';
@@ -215,7 +216,7 @@ async function executeTool(name, args) {
 }
 
 // Token budget para el prompt completo (sistema + tools + historial + mensaje actual).
-// Conservador: deja margen para tool declarations (~1500 tokens) y respuesta del modelo.
+// Con tool routing, las tools seleccionadas son un subconjunto (~300-1000 tokens vs ~2500 full).
 const PROMPT_TOKEN_BUDGET = 5500;
 
 /**
@@ -358,6 +359,15 @@ export async function processMessage(userMessage, history, imageContent = null) 
     { role: 'user', content: userContent },
   ];
 
+  // Select only the tools relevant to this message — avoids sending all 24 tool
+  // schemas on every request (saves ~1500-2000 tokens per call).
+  const domains = classifyIntent(userMessage);
+  const selectedTools = selectTools(domains);
+  const toolParams = selectedTools.length > 0
+    ? { tools: selectedTools, tool_choice: 'auto' }
+    : {};
+  console.log(`[ai:intent] domains=[${domains.join(',')}]  tools=${selectedTools.length}/24`);
+
   const MAX_LOOPS = 5;
   let loops = 0;
   let currentMessages = [...messages];
@@ -371,8 +381,7 @@ export async function processMessage(userMessage, history, imageContent = null) 
       response = await keyManager.createCompletion({
         model:       'anthropic/claude-3-haiku',
         messages:    currentMessages,
-        tools:       toolDeclarations,
-        tool_choice: 'auto',
+        ...toolParams,
         temperature: 0.3,
         max_tokens:  1024,
         requireImageSupport: Boolean(imageContent),
@@ -429,8 +438,7 @@ export async function processMessage(userMessage, history, imageContent = null) 
           response = await keyManager.createCompletion({
             model:       'anthropic/claude-3-haiku',
             messages:    minimalCtx,
-            tools:       toolDeclarations,
-            tool_choice: 'auto',
+            ...toolParams,
             temperature: 0.3,
             max_tokens:  1024,
           });

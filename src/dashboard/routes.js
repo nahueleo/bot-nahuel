@@ -256,33 +256,71 @@ router.get('/api/reminders', async (req, res) => {
   }
 });
 
-// ─── API: tareas programadas — lectura ────────────────────────────────────────
+// ─── API: tool descriptors ────────────────────────────────────────────────────
+router.get('/api/tools', (_req, res) => {
+  res.json({ tools: getToolDescriptors() });
+});
+
+// ─── API: tareas programadas — listado ────────────────────────────────────────
 router.get('/api/tasks', async (req, res) => {
   try {
-    const config = await getTasksConfig();
-    const log    = await getTaskLog('morning_briefing');
-    res.json({ tasks: config, logs: { morning_briefing: log } });
+    const tasks = await getAllTasks();
+    res.json({ tasks });
   } catch {
     res.status(500).json({ error: 'Error obteniendo tareas' });
   }
 });
 
+// ─── API: tareas — obtener una ────────────────────────────────────────────────
+router.get('/api/tasks/:id', async (req, res) => {
+  try {
+    const task = await getTaskById(req.params.id);
+    if (!task) return res.status(404).json({ error: 'Tarea no encontrada' });
+    const log = await getTaskLog(req.params.id);
+    res.json({ task, log });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ─── API: crear tarea ─────────────────────────────────────────────────────────
+router.post('/api/tasks', async (req, res) => {
+  try {
+    const body = req.body ?? {};
+    if (!body.name?.trim()) return res.status(400).json({ error: 'El campo name es requerido' });
+    if (body.phone && !/^\d{7,20}$/.test(body.phone)) {
+      return res.status(400).json({ error: 'Número de teléfono inválido (solo dígitos, 7-20 chars)' });
+    }
+    const task = await createTask(body);
+    await syncScheduler();
+    res.status(201).json({ ok: true, task });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // ─── API: actualizar tarea ────────────────────────────────────────────────────
-router.post('/api/tasks/:id', async (req, res) => {
+router.patch('/api/tasks/:id', async (req, res) => {
   try {
     const { id } = req.params;
-    const allowed = ['morning_briefing'];
-    if (!allowed.includes(id)) return res.status(400).json({ error: 'Tarea desconocida' });
-
-    // Validate phone if provided
-    const updates = req.body;
+    const updates = req.body ?? {};
     if (updates.phone !== undefined && updates.phone !== '' && !/^\d{7,20}$/.test(updates.phone)) {
       return res.status(400).json({ error: 'Número de teléfono inválido (solo dígitos, 7-20 chars)' });
     }
-
     const updated = await updateTask(id, updates);
     await syncScheduler();
     res.json({ ok: true, task: updated });
+  } catch (err) {
+    res.status(err.message?.includes('no encontrada') ? 404 : 500).json({ error: err.message });
+  }
+});
+
+// ─── API: eliminar tarea ──────────────────────────────────────────────────────
+router.delete('/api/tasks/:id', async (req, res) => {
+  try {
+    await deleteScheduledTask(req.params.id);
+    await syncScheduler();
+    res.json({ ok: true });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -291,13 +329,18 @@ router.post('/api/tasks/:id', async (req, res) => {
 // ─── API: ejecutar tarea ahora ────────────────────────────────────────────────
 router.post('/api/tasks/:id/run', async (req, res) => {
   try {
-    const { id } = req.params;
-    if (id === 'morning_briefing') {
-      const result = await runMorningBriefing();
-      res.json(result);
-    } else {
-      res.status(400).json({ error: 'Tarea desconocida' });
-    }
+    const result = await runTask(req.params.id);
+    res.json(result);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ─── API: log de tarea ────────────────────────────────────────────────────────
+router.get('/api/tasks/:id/log', async (req, res) => {
+  try {
+    const log = await getTaskLog(req.params.id);
+    res.json({ log });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -490,6 +533,32 @@ input[type=text]:focus,input[type=time]:focus,select:focus{border-color:var(--ac
 .nav-subitem:first-child{padding-top:4px !important}
 .nav-subitem:last-child{padding-bottom:8px !important}
 
+/* ── Task cards (multi-task UI) ── */
+.task-card{background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:18px 20px;margin-bottom:12px;transition:border-color .2s}
+.task-card:hover{border-color:rgba(59,130,246,.4)}
+.task-card-head{display:flex;align-items:center;gap:10px;margin-bottom:10px}
+.task-card-emoji{font-size:20px;width:36px;height:36px;border-radius:50%;background:var(--surface2);display:flex;align-items:center;justify-content:center;flex-shrink:0}
+.task-card-name{font-size:15px;font-weight:700;color:#f1f5f9;flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.task-card-meta{font-size:12px;color:var(--muted);display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:10px}
+.task-card-tools{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:10px}
+.tool-chip{font-size:11px;padding:3px 8px;border-radius:12px;background:var(--surface2);border:1px solid var(--border);color:var(--muted);white-space:nowrap}
+.task-card-footer{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+.task-last-run{font-size:11px;color:var(--muted);margin-left:auto}
+
+/* ── Tool builder in modal ── */
+.tool-row{border:1px solid var(--border);border-radius:10px;margin-bottom:8px;overflow:hidden;transition:border-color .2s}
+.tool-row.enabled{border-color:var(--accent)}
+.tool-row-head{display:flex;align-items:center;gap:10px;padding:10px 14px;cursor:pointer;user-select:none;background:var(--surface2)}
+.tool-row-head:hover{background:#253346}
+.tool-row-emoji{font-size:16px;width:26px;text-align:center;flex-shrink:0}
+.tool-row-name{font-size:13px;font-weight:600;color:#f1f5f9;flex:1}
+.tool-row-desc{font-size:11px;color:var(--muted);flex:2}
+.tool-config{padding:14px;background:rgba(0,0,0,.2);border-top:1px solid var(--border)}
+.multi-select-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:6px;margin-top:4px}
+.ms-chip{display:flex;align-items:center;gap:6px;padding:5px 10px;border:1px solid var(--border);border-radius:8px;cursor:pointer;font-size:12px;background:var(--surface2);transition:all .15s}
+.ms-chip.selected{background:rgba(59,130,246,.15);border-color:var(--accent);color:#f1f5f9}
+.ms-chip input{display:none}
+
 /* ── WhatsApp Messages Tab ── */
 #tab-messages.active{display:flex!important;flex-direction:column;height:100%;overflow:hidden;position:relative}
 .wa-header{background:var(--surface);border-bottom:1px solid var(--border);padding:12px 18px;display:flex;align-items:center;gap:12px;flex-shrink:0}
@@ -611,15 +680,12 @@ input[type=text]:focus,input[type=time]:focus,select:focus{border-color:var(--ac
   </div>
 
   <div class="grid-2">
-    <!-- Resumen matutino preview -->
+    <!-- Tareas programadas preview -->
     <div class="card">
-      <div class="card-title">🌅 <span>Resumen Matutino</span></div>
-      <div id="overview-task-status"></div>
+      <div class="card-title">⚙️ <span>Tareas Programadas</span></div>
+      <div id="overview-task-status"><div class="empty" style="padding:8px 0">Cargando...</div></div>
       <div class="flex-row mt-12">
-        <button class="btn btn-primary" onclick="runTaskNow('morning_briefing')" id="btn-run-briefing">
-          ▶ Enviar ahora
-        </button>
-        <button class="btn btn-ghost" onclick="goToTab('tasks')">Configurar →</button>
+        <button class="btn btn-ghost" onclick="goToTab('tasks')">Ver todas →</button>
       </div>
     </div>
 
@@ -646,104 +712,106 @@ input[type=text]:focus,input[type=time]:focus,select:focus{border-color:var(--ac
 
 <!-- ════════════════════ TAB: TAREAS ════════════════════ -->
 <div class="tab-content" id="tab-tasks">
-  <h2 style="font-size:18px;font-weight:700;color:#f1f5f9;margin-bottom:20px">⚙️ Tareas Programadas</h2>
 
-  <!-- Morning Briefing -->
-  <div class="card">
-    <div class="task-header">
-      <div class="task-title">🌅 Resumen Matutino</div>
-      <div>
-        <span class="task-status off" id="mb-status-badge">Desactivado</span>
-      </div>
-    </div>
-
-    <div class="stat-row">
-      <span class="stat-lbl">Estado</span>
-      <label class="toggle">
-        <input type="checkbox" id="mb-enabled" onchange="saveMorningBriefing()">
-        <span class="slider"></span>
-      </label>
-    </div>
-
-    <div class="grid-2 mt-12">
-      <div class="field">
-        <label>Hora de envío</label>
-        <input type="time" id="mb-time" value="07:00" onchange="saveMorningBriefing()">
-      </div>
-      <div class="field">
-        <label>Número WhatsApp destino</label>
-        <input type="text" id="mb-phone" placeholder="549XXXXXXXXXX (solo dígitos)" oninput="debounceSave()">
-      </div>
-    </div>
-
-    <div class="field">
-      <label>Cuenta de Google Calendar</label>
-      <select id="mb-calendar-account" onchange="saveMorningBriefing()">
-        <option value="">— Sin calendario —</option>
-      </select>
-    </div>
-
-    <div class="field">
-      <label>Secciones incluidas</label>
-      <div class="sections-grid">
-        <div class="section-card" id="sec-weather">
-          <span class="section-icon">🌤️</span>
-          <div><div class="section-name">Clima</div>
-          <label class="toggle" style="width:36px;height:20px;margin-top:4px">
-            <input type="checkbox" id="sec-weather-chk" checked onchange="saveSections()">
-            <span class="slider" style="border-radius:20px"></span>
-          </label></div>
-        </div>
-        <div class="section-card" id="sec-belgrano">
-          <span class="section-icon">⚽</span>
-          <div><div class="section-name">Belgrano</div>
-          <label class="toggle" style="width:36px;height:20px;margin-top:4px">
-            <input type="checkbox" id="sec-belgrano-chk" checked onchange="saveSections()">
-            <span class="slider" style="border-radius:20px"></span>
-          </label></div>
-        </div>
-        <div class="section-card" id="sec-cordoba">
-          <span class="section-icon">🏙️</span>
-          <div><div class="section-name">Noticias Córdoba</div>
-          <label class="toggle" style="width:36px;height:20px;margin-top:4px">
-            <input type="checkbox" id="sec-cordoba-chk" checked onchange="saveSections()">
-            <span class="slider" style="border-radius:20px"></span>
-          </label></div>
-        </div>
-        <div class="section-card" id="sec-argentina">
-          <span class="section-icon">🇦🇷</span>
-          <div><div class="section-name">Noticias Argentina</div>
-          <label class="toggle" style="width:36px;height:20px;margin-top:4px">
-            <input type="checkbox" id="sec-argentina-chk" checked onchange="saveSections()">
-            <span class="slider" style="border-radius:20px"></span>
-          </label></div>
-        </div>
-        <div class="section-card" id="sec-calendar">
-          <span class="section-icon">📅</span>
-          <div><div class="section-name">Reuniones del día</div>
-          <label class="toggle" style="width:36px;height:20px;margin-top:4px">
-            <input type="checkbox" id="sec-calendar-chk" checked onchange="saveSections()">
-            <span class="slider" style="border-radius:20px"></span>
-          </label></div>
-        </div>
-      </div>
-    </div>
-
-    <div style="display:flex;gap:10px;margin-top:16px;flex-wrap:wrap">
-      <button class="btn btn-primary" onclick="runTaskNow('morning_briefing')" id="btn-run-mb">
-        ▶ Enviar ahora (prueba)
-      </button>
+  <!-- Header + botón nueva tarea -->
+  <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:20px;flex-wrap:wrap;gap:10px">
+    <h2 style="font-size:18px;font-weight:700;color:#f1f5f9">⚙️ Tareas Programadas</h2>
+    <div style="display:flex;gap:8px">
       <button class="btn btn-ghost" onclick="loadTasks()">↻ Recargar</button>
-    </div>
-
-    <div class="task-last-run" id="mb-last-run"></div>
-
-    <!-- Log de ejecuciones -->
-    <div style="margin-top:16px">
-      <div class="card-title" style="margin-bottom:8px">📋 <span>Últimas ejecuciones</span></div>
-      <div class="log-list" id="mb-log"></div>
+      <button class="btn btn-primary" onclick="openTaskModal(null)">+ Nueva Tarea</button>
     </div>
   </div>
+
+  <!-- Lista de tareas -->
+  <div id="tasks-list"><div class="empty" style="padding:48px 0">Cargando tareas...</div></div>
+
+  <!-- Panel de log (colapsable) -->
+  <div id="task-log-panel" style="display:none">
+    <div class="card" style="margin-top:16px">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">
+        <div class="card-title" style="margin:0">📋 <span id="log-panel-title">Últimas ejecuciones</span></div>
+        <button class="btn btn-ghost" style="padding:4px 10px;font-size:11px" onclick="closeLogPanel()">✕</button>
+      </div>
+      <div class="log-list" id="task-log-list" style="max-height:300px"></div>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════ MODAL: CREAR / EDITAR TAREA ═══════════ -->
+<div id="task-modal-overlay" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.65);z-index:500;overflow-y:auto;padding:20px">
+<div id="task-modal" style="background:var(--surface);border:1px solid var(--border);border-radius:16px;max-width:680px;margin:0 auto;padding:28px;position:relative">
+
+  <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:20px">
+    <h3 id="modal-title" style="font-size:17px;font-weight:700;color:#f1f5f9">Nueva Tarea</h3>
+    <button onclick="closeTaskModal()" style="background:none;border:none;color:var(--muted);cursor:pointer;font-size:20px;line-height:1;padding:4px">✕</button>
+  </div>
+
+  <!-- Nombre + emoji -->
+  <div class="grid-2">
+    <div class="field">
+      <label>Emoji</label>
+      <input type="text" id="modal-emoji" value="🤖" maxlength="4" style="font-size:22px;text-align:center;width:70px">
+    </div>
+    <div class="field" style="flex:1">
+      <label>Nombre de la tarea</label>
+      <input type="text" id="modal-name" placeholder="Ej: Resumen mañanero">
+    </div>
+  </div>
+
+  <!-- Horario -->
+  <div class="field">
+    <label>Tipo de horario</label>
+    <select id="modal-schedule-type" onchange="onScheduleTypeChange()">
+      <option value="daily">Todos los días</option>
+      <option value="weekdays">Lunes a Viernes</option>
+      <option value="weekends">Sábado y Domingo</option>
+      <option value="weekly">Días específicos</option>
+      <option value="custom">Cron personalizado</option>
+    </select>
+  </div>
+
+  <div id="modal-time-row" class="field">
+    <label>Hora de envío</label>
+    <input type="time" id="modal-time" value="07:00">
+  </div>
+
+  <div id="modal-days-row" style="display:none" class="field">
+    <label>Días de la semana</label>
+    <div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:4px">
+      ${['Dom','Lun','Mar','Mié','Jue','Vie','Sáb'].map((d,i) =>
+        `<label style="display:flex;align-items:center;gap:4px;cursor:pointer;padding:5px 10px;background:var(--surface2);border:1px solid var(--border);border-radius:6px;font-size:12px;font-weight:600">
+          <input type="checkbox" data-day="${i}" class="day-chk" ${i>=1&&i<=5?'checked':''}> ${d}
+        </label>`
+      ).join('')}
+    </div>
+  </div>
+
+  <div id="modal-cron-row" style="display:none" class="field">
+    <label>Expresión Cron (timezone: America/Argentina/Buenos_Aires)</label>
+    <input type="text" id="modal-cron" placeholder="0 7 * * 1-5  →  Lun-Vie a las 07:00">
+  </div>
+
+  <!-- Teléfono -->
+  <div class="field">
+    <label>Número WhatsApp destino (solo dígitos)</label>
+    <input type="text" id="modal-phone" placeholder="549XXXXXXXXXX">
+  </div>
+
+  <!-- Herramientas -->
+  <div class="field" style="margin-top:4px">
+    <label>Herramientas incluidas</label>
+    <p style="font-size:12px;color:var(--muted);margin-bottom:10px">Activá las que quieras. Cada una se envía como una sección del mensaje.</p>
+    <div id="modal-tools-list"></div>
+  </div>
+
+  <!-- Botones -->
+  <div style="display:flex;gap:10px;margin-top:20px;justify-content:flex-end">
+    <button class="btn btn-ghost" onclick="closeTaskModal()">Cancelar</button>
+    <button class="btn btn-primary" onclick="saveTask()" id="modal-save-btn">Guardar tarea</button>
+  </div>
+
+  <input type="hidden" id="modal-task-id" value="">
+</div>
 </div>
 
 <!-- ════════════════════ TAB: MENSAJES ════════════════════ -->
