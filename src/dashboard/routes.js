@@ -304,6 +304,7 @@ function getDashboardHTML() {
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1.0">
+<link rel="icon" href="/favicon.ico" type="image/png">
 <title>Bot Nahuel — Dashboard</title>
 <style>
 *{box-sizing:border-box;margin:0;padding:0}

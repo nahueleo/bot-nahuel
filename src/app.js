@@ -24,6 +24,15 @@ app.use('/', webhookRouter);    // GET /webhook + POST /webhook
 app.use('/', authRouter);       // GET /auth/google + /auth/google/callback + /auth/status
 app.use('/', dashboardRouter);  // GET /dashboard + /api/status + /api/events
 
+// ─── Favicon ─────────────────────────────────────────────────────────────────────
+app.get('/favicon.ico', (req, res) => {
+  const faviconData = Buffer.from(
+    'iVBORw0KGgoAAAANSUhEUgAAACAAAAAgCAYAAABzenr0AAAAdUlEQVR4nO3WwREAEQyFYR3sUQ+q2ua2SRcaIJ4kBjvvkCP/dzESnpjKzgkEEKA59H65OUsBvagVAwFm4zOIIUAbRxEiwBpHEF2AV3yEIKAJ8I5LCAIIOBOw/RkS4I2QGmd/x1YEcvcdKxmK0dx151pOwK8AFaEywuqzWpebAAAAAElFTkSuQmCC',
+    'base64'
+  );
+  res.type('image/png').send(faviconData);
+});
+
 // ─── Root redirect ────────────────────────────────────────────────────────────
 app.get('/', (req, res) => res.redirect('/dashboard'));
 
