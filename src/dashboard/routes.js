@@ -1,9 +1,11 @@
 import { Router } from 'express';
 import { listConnectedAccounts } from '../auth/google.js';
-import { getMessageLog } from '../conversation/store.js';
+import { getHistory, setHistory, getMessageLog, logMessage } from '../conversation/store.js';
 import { getRedisClient } from '../redis/client.js';
 import { getPendingReminders } from '../redis/reminders.js';
 import { getTasksConfig, updateTask, getTaskLog } from '../redis/tasks.js';
+import { sendWhatsAppMessage } from '../whatsapp/api.js';
+import { processMessage } from '../ai/claude.js';
 import { listAllCalendars, getEvents } from '../calendar/client.js';
 import { runMorningBriefing } from '../tasks/morning-briefing.js';
 import { syncScheduler } from '../tasks/scheduler.js';
@@ -78,6 +80,36 @@ router.get('/api/status', async (req, res) => {
     res.json({ uptime: Math.floor((Date.now() - startTime) / 1000), redis: redisOk, accounts, messages });
   } catch {
     res.status(500).json({ error: 'Error obteniendo estado' });
+  }
+});
+
+// ─── API: enviar mensaje desde dashboard ──────────────────────────────────────
+router.post('/api/messages/send', async (req, res) => {
+  try {
+    const body = req.body || {};
+    const phone = String(body.phone || '').replace(/\D/g, '');
+    const text = String(body.text || '').trim();
+
+    if (!phone || !text) {
+      return res.status(400).json({ error: 'Se requieren phone y text' });
+    }
+
+    const history = await getHistory(phone);
+    const { reply, updatedHistory } = await processMessage(text, history, null);
+    await setHistory(phone, updatedHistory);
+    await sendWhatsAppMessage(phone, reply);
+    await logMessage(phone, text, reply, true);
+    broadcastSSE('message', {
+      from:      phone.slice(-4).padStart(10, '*'),
+      text:      text.slice(0, 200),
+      response:  reply.slice(0, 300),
+      timestamp: new Date().toISOString(),
+    });
+
+    res.json({ ok: true, reply });
+  } catch (err) {
+    console.error('[dashboard] Error enviando mensaje AI:', err.message || err);
+    res.status(500).json({ error: err.message || 'Error interno' });
   }
 });
 
@@ -317,7 +349,7 @@ input:checked+.slider:before{transform:translateX(22px)}
 .toggle-label{font-size:13px;font-weight:500;color:var(--text)}
 
 /* ── Inputs & Buttons ── */
-input[type=text],input[type=time],select{
+input[type=text],input[type=time],select,textarea{
   background:var(--surface2);border:1px solid var(--border);color:var(--text);
   padding:8px 12px;border-radius:8px;font-size:13px;outline:none;
   transition:border-color .15s;width:100%
@@ -614,13 +646,20 @@ input[type=text]:focus,input[type=time]:focus,select:focus{border-color:var(--ac
       <span class="dot dot-green dot-pulse"></span> en vivo
     </span>
   </h2>
-  <div class="msg-list" id="all-msgs">
-    <div class="empty">Esperando mensajes...</div>
+  <div class="card" style="margin-bottom:16px">
+    <div class="card-title">✉️ <span>Enviar mensaje desde el dashboard</span></div>
+    <div class="grid-2">
+      <div class="field">
+        <label>Teléfono WhatsApp</label>
+        <input type="text" id="send-phone" placeholder="549XXXXXXXXXX" autocomplete="off">
+      </div>
+    </div>
+    <div class="field">
+      <label>Mensaje</label>
+      <textarea id="send-text" rows="4" placeholder="Escribí tu mensaje aquí..."></textarea>
+    </div>
+    <button class="btn btn-primary" id="send-message-btn" onclick="sendDashboardMessage()">Enviar y responder</button>
   </div>
-</div>
-
-<!-- ════════════════════ TAB: CALENDARIO ════════════════════ -->
-<div class="tab-content" id="tab-calendar">
   <h2 style="font-size:18px;font-weight:700;color:#f1f5f9;margin-bottom:16px">📅 Calendario</h2>
 
   <!-- Filtros -->
@@ -1126,6 +1165,48 @@ async function runTaskNow(id) {
   } catch { showToast('Error de conexión', false); }
   finally {
     [btn, btn2].forEach(b => { if (b) { b.disabled = false; b.textContent = b.id === 'btn-run-briefing' ? '▶ Enviar ahora' : '▶ Enviar ahora (prueba)'; } });
+  }
+}
+
+async function sendDashboardMessage() {
+  const phoneEl = document.getElementById('send-phone');
+  const textEl = document.getElementById('send-text');
+  const btn = document.getElementById('send-message-btn');
+  const phone = String(phoneEl?.value || '').trim();
+  const text = String(textEl?.value || '').trim();
+
+  if (!phone || !text) {
+    showToast('Completa teléfono y mensaje', false);
+    return;
+  }
+
+  btn.disabled = true;
+  btn.textContent = '⏳ Enviando...';
+
+  try {
+    const r = await fetch('/api/messages/send', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ phone, text }),
+    }).then(r => r.json());
+
+    if (r.error) {
+      showToast('Error: ' + r.error, false);
+      return;
+    }
+
+    showToast('✅ Mensaje enviado y bot respondió');
+    textEl.value = '';
+    const allEl = document.getElementById('all-msgs');
+    if (allEl) {
+      if (allEl.querySelector('.empty')) allEl.innerHTML = '';
+      allEl.prepend(msgCard({ from: phone, text, response: r.reply, timestamp: new Date().toISOString() }, true));
+    }
+  } catch (err) {
+    showToast('Error de conexión', false);
+  } finally {
+    btn.disabled = false;
+    btn.textContent = 'Enviar y responder';
   }
 }
 
