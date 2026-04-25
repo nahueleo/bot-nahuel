@@ -513,6 +513,51 @@ input[type=text]:focus,input[type=time]:focus,select:focus{border-color:var(--ac
   .grid-2{grid-template-columns:1fr}
   .grid-3{grid-template-columns:1fr}
 }
+
+/* ── WhatsApp Messages Tab ── */
+#tab-messages.active{display:flex!important;flex-direction:column;height:100%;overflow:hidden}
+.wa-header{background:var(--surface);border-bottom:1px solid var(--border);padding:12px 18px;display:flex;align-items:center;gap:12px;flex-shrink:0}
+.wa-avatar{width:42px;height:42px;border-radius:50%;background:linear-gradient(135deg,#25D366,#128C7E);display:flex;align-items:center;justify-content:center;font-size:20px;flex-shrink:0;box-shadow:0 2px 8px rgba(37,211,102,.3)}
+.wa-header-info{flex:1;min-width:0}
+.wa-contact-name-wrap{display:flex;align-items:center;gap:6px}
+.wa-phone-sel{background:transparent;border:none;color:#f1f5f9;font-size:15px;font-weight:600;cursor:pointer;outline:none;max-width:220px;padding:0;font-family:inherit}
+.wa-phone-sel option{background:#1f2937;color:#f1f5f9;font-weight:500}
+.wa-contact-status{font-size:11px;color:#25D366;margin-top:2px;display:flex;align-items:center;gap:5px}
+.wa-messages{flex:1;overflow-y:auto;padding:16px 20px;background:radial-gradient(ellipse at 20% 80%,rgba(18,140,126,.07) 0%,transparent 60%),linear-gradient(160deg,#080f1c 0%,#0b1829 100%);display:flex;flex-direction:column;gap:6px;scroll-behavior:smooth}
+.wa-messages::-webkit-scrollbar{width:4px}
+.wa-messages::-webkit-scrollbar-track{background:transparent}
+.wa-messages::-webkit-scrollbar-thumb{background:rgba(255,255,255,.1);border-radius:2px}
+.wa-bubble{max-width:65%;padding:8px 14px 5px;position:relative;word-break:break-word;line-height:1.55;font-size:14px;animation:bubbleIn .18s ease}
+@keyframes bubbleIn{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:translateY(0)}}
+.wa-bubble.outgoing{align-self:flex-end;background:linear-gradient(135deg,#005C4B,#007a64);color:#e9edef;border-radius:14px 14px 3px 14px;box-shadow:0 1px 4px rgba(0,0,0,.3)}
+.wa-bubble.incoming{align-self:flex-start;background:#1a2537;color:#e2e8f0;border-radius:14px 14px 14px 3px;border:1px solid rgba(255,255,255,.06);box-shadow:0 1px 4px rgba(0,0,0,.3)}
+.wa-bubble-text{white-space:pre-wrap}
+.wa-bubble-time{font-size:10px;color:rgba(255,255,255,.45);text-align:right;margin-top:4px;display:flex;align-items:center;justify-content:flex-end;gap:3px}
+.wa-bubble.outgoing .wa-bubble-time::after{content:'✓✓';color:#53bdeb;font-size:11px}
+.wa-bubble img{max-width:220px;border-radius:10px;display:block;margin-bottom:5px}
+.wa-date-divider{text-align:center;margin:8px 0;color:var(--muted);font-size:11px;display:flex;align-items:center;gap:10px}
+.wa-date-divider::before,.wa-date-divider::after{content:'';flex:1;height:1px;background:rgba(255,255,255,.07)}
+.wa-empty{text-align:center;color:var(--muted);font-size:13px;padding:48px 20px;margin:auto;display:flex;flex-direction:column;align-items:center;gap:10px}
+.wa-empty-icon{font-size:40px;opacity:.4}
+.wa-input-bar{background:var(--surface);border-top:1px solid var(--border);padding:10px 14px;display:flex;align-items:flex-end;gap:8px;flex-shrink:0}
+.wa-attach-label{width:40px;height:40px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:20px;cursor:pointer;color:var(--muted);flex-shrink:0;transition:all .15s;user-select:none}
+.wa-attach-label:hover{color:#25D366;background:rgba(37,211,102,.08)}
+.wa-compose{flex:1;display:flex;flex-direction:column;gap:4px;min-width:0}
+.wa-text-area{width:100%;background:#1e2d3d;border:1px solid rgba(255,255,255,.1);border-radius:22px;color:#e9edef;padding:10px 16px;font-size:14px;resize:none;outline:none;overflow-y:hidden;line-height:1.45;min-height:42px;max-height:120px;display:block;font-family:inherit;transition:border-color .15s}
+.wa-text-area::placeholder{color:#637080}
+.wa-text-area:focus{border-color:rgba(37,211,102,.4)}
+.wa-file-preview{font-size:12px;color:#25D366;padding:5px 12px;background:rgba(37,211,102,.07);border-radius:14px;border:1px solid rgba(37,211,102,.2);display:flex;align-items:center;gap:8px;animation:bubbleIn .2s ease}
+.wa-file-preview-x{cursor:pointer;margin-left:auto;font-size:15px;line-height:1;color:var(--muted);padding:0 2px}
+.wa-file-preview-x:hover{color:var(--red)}
+.wa-send-btn{width:44px;height:44px;border-radius:50%;background:#25D366;border:none;display:flex;align-items:center;justify-content:center;cursor:pointer;color:white;flex-shrink:0;transition:all .15s;box-shadow:0 2px 8px rgba(37,211,102,.3)}
+.wa-send-btn:hover{background:#20ba5a;transform:scale(1.05)}
+.wa-send-btn:active{transform:scale(.95)}
+.wa-send-btn:disabled{background:#2d3f52;cursor:not-allowed;box-shadow:none;transform:none}
+@media(max-width:768px){
+  .wa-bubble{max-width:82%}
+  .wa-messages{padding:12px}
+  .wa-phone-sel{max-width:160px}
+}
 </style>
 </head>
 <body>
@@ -709,32 +754,41 @@ input[type=text]:focus,input[type=time]:focus,select:focus{border-color:var(--ac
 
 <!-- ════════════════════ TAB: MENSAJES ════════════════════ -->
 <div class="tab-content" id="tab-messages">
-  <h2 style="font-size:18px;font-weight:700;color:#f1f5f9;margin-bottom:20px;display:flex;align-items:center;gap:10px">
-    💬 Mensajes en tiempo real
-    <span style="display:flex;align-items:center;gap:6px;font-size:12px;font-weight:400;color:var(--green)">
-      <span class="dot dot-green dot-pulse"></span> en vivo
-    </span>
-  </h2>
-  <div class="card" style="margin-bottom:16px">
-    <div class="card-title">✉️ <span>Enviar mensaje desde el dashboard</span></div>
-    <div class="field">
-      <label>Chat asociado</label>
-      <select id="send-phone" style="width:100%">
-        <option value="">Cargando chats...</option>
-      </select>
+  <!-- Header estilo WhatsApp -->
+  <div class="wa-header">
+    <div class="wa-avatar">💬</div>
+    <div class="wa-header-info">
+      <div class="wa-contact-name-wrap">
+        <select id="send-phone" class="wa-phone-sel" onchange="onChatChange(this.value)">
+          <option value="">Seleccioná un chat...</option>
+        </select>
+      </div>
+      <div class="wa-contact-status">
+        <span class="dot dot-green dot-pulse" style="width:7px;height:7px;flex-shrink:0"></span>
+        en vivo · WhatsApp
+      </div>
     </div>
-    <div class="field">
-      <label>Mensaje</label>
-      <textarea id="send-text" rows="4" placeholder="Escribí tu mensaje aquí..."></textarea>
-    </div>
-    <div class="field">
-      <label>Imagen opcional</label>
-      <input type="file" id="send-image" accept="image/*">
-    </div>
-    <button class="btn btn-primary" id="send-message-btn" onclick="sendDashboardMessage()">Enviar y responder</button>
   </div>
-  <div class="chat-thread" id="chat-thread">
-    <div class="empty">Seleccioná un chat para ver el historial y enviar mensajes</div>
+  <!-- Área de mensajes -->
+  <div class="wa-messages" id="chat-thread">
+    <div class="wa-empty">
+      <span class="wa-empty-icon">💬</span>
+      Seleccioná un chat para ver el historial
+    </div>
+  </div>
+  <!-- Barra de entrada -->
+  <div class="wa-input-bar">
+    <label class="wa-attach-label" for="send-image" title="Adjuntar imagen">📎</label>
+    <input type="file" id="send-image" accept="image/*" style="display:none" onchange="onFileSelected(this)">
+    <div class="wa-compose">
+      <div id="wa-file-preview" style="display:none"></div>
+      <textarea class="wa-text-area" id="send-text" placeholder="Escribir mensaje..."
+        onkeydown="if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();sendDashboardMessage()}"
+        oninput="autoResize(this)"></textarea>
+    </div>
+    <button class="wa-send-btn" id="send-message-btn" onclick="sendDashboardMessage()" title="Enviar">
+      <svg viewBox="0 0 24 24" fill="currentColor" width="20" height="20"><path d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z"/></svg>
+    </button>
   </div>
 </div>
 
@@ -908,8 +962,15 @@ function msgCard(m, prepend = false) {
 
 function chatBubble(content, role, timestamp) {
   const d = document.createElement('div');
-  d.className = 'chat-bubble ' + role;
-    const textHtml = content.text ? '<div>' + esc(content.text).replace(/\\n/g, '<br>') + '</div>' : '';
+  d.className = 'wa-bubble ' + (role === 'user' ? 'outgoing' : 'incoming');
+  const imgHtml = content.image ? '<img src="' + content.image + '" alt="imagen">' : '';
+  const textHtml = content.text
+    ? '<div class="wa-bubble-text">' + esc(content.text) + '</div>'
+    : '';
+  const time = timestamp
+    ? new Date(timestamp).toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit' })
+    : '';
+  d.innerHTML = imgHtml + textHtml + '<div class="wa-bubble-time">' + time + '</div>';
   return d;
 }
 
@@ -917,19 +978,25 @@ function renderChatHistory(logs) {
   const thread = document.getElementById('chat-thread');
   if (!thread) return;
   if (!logs || !logs.length) {
-    thread.innerHTML = '<div class="empty">Seleccioná un chat para ver el historial y enviar mensajes</div>';
+    thread.innerHTML = '<div class="wa-empty"><span class="wa-empty-icon">💬</span>Sin mensajes en este chat</div>';
     return;
   }
   thread.innerHTML = '';
+  let lastDate = '';
   logs.forEach((log) => {
     const timestamp = log.timestamp || new Date().toISOString();
-    const userBubble = chatBubble({ text: log.text }, 'user', timestamp);
-    thread.appendChild(userBubble);
-    if (log.response) {
-      const botBubble = chatBubble({ text: log.response }, 'bot', timestamp);
-      thread.appendChild(botBubble);
+    const dateStr = new Date(timestamp).toLocaleDateString('es-AR', { day: '2-digit', month: '2-digit', year: 'numeric' });
+    if (dateStr !== lastDate) {
+      const div = document.createElement('div');
+      div.className = 'wa-date-divider';
+      div.textContent = dateStr;
+      thread.appendChild(div);
+      lastDate = dateStr;
     }
+    if (log.text) thread.appendChild(chatBubble({ text: log.text }, 'user', timestamp));
+    if (log.response) thread.appendChild(chatBubble({ text: log.response }, 'bot', timestamp));
   });
+  thread.scrollTop = thread.scrollHeight;
 }
 
 // ── Tabs ───────────────────────────────────────────────────────────────────
@@ -938,6 +1005,14 @@ function goToTab(id) {
   document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
   document.getElementById('tab-' + id)?.classList.add('active');
   document.querySelector('[data-tab=' + id + ']')?.classList.add('active');
+  const panel = document.querySelector('.panel');
+  if (id === 'messages') {
+    panel.style.overflow = 'hidden';
+    panel.style.padding = '0';
+  } else {
+    panel.style.overflow = '';
+    panel.style.padding = '';
+  }
   if (id === 'calendar') loadCalendar();
   if (id === 'gmail') loadGmail();
   if (id === 'gtasks') loadGTasks();
