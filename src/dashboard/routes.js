@@ -89,13 +89,14 @@ router.post('/api/messages/send', async (req, res) => {
     const body = req.body || {};
     const phone = String(body.phone || '').replace(/\D/g, '');
     const text = String(body.text || '').trim();
+    const image = body.image || null;
 
-    if (!phone || !text) {
-      return res.status(400).json({ error: 'Se requieren phone y text' });
+    if (!phone || (!text && !image)) {
+      return res.status(400).json({ error: 'Se requieren phone y texto o imagen' });
     }
 
     const history = await getHistory(phone);
-    const { reply, updatedHistory } = await processMessage(text, history, null);
+    const { reply, updatedHistory } = await processMessage(text || ' ', history, image);
     await setHistory(phone, updatedHistory);
     await sendWhatsAppMessage(phone, reply);
     await logMessage(phone, text, reply, true);
@@ -110,6 +111,30 @@ router.post('/api/messages/send', async (req, res) => {
   } catch (err) {
     console.error('[dashboard] Error enviando mensaje AI:', err.message || err);
     res.status(500).json({ error: err.message || 'Error interno' });
+  }
+});
+
+router.get('/api/chats', async (req, res) => {
+  try {
+    const redis = await getRedisClient();
+    const keys = await redis.keys('conv:*');
+    const phones = keys.map((key) => key.replace(/^conv:/, '')).sort();
+    res.json({ chats: phones });
+  } catch (err) {
+    console.error('[dashboard] Error obteniendo chats:', err.message || err);
+    res.status(500).json({ error: 'Error obteniendo chats' });
+  }
+});
+
+router.get('/api/messages/log', async (req, res) => {
+  try {
+    const phone = String(req.query.phone || '').replace(/\D/g, '');
+    const logs = await getMessageLog(200);
+    const filtered = phone ? logs.filter((m) => m.phone === phone) : logs;
+    res.json({ logs: filtered.slice(0, 50) });
+  } catch (err) {
+    console.error('[dashboard] Error obteniendo log de mensajes:', err.message || err);
+    res.status(500).json({ error: 'Error obteniendo log' });
   }
 });
 
@@ -349,10 +374,53 @@ input:checked+.slider:before{transform:translateX(22px)}
 .toggle-label{font-size:13px;font-weight:500;color:var(--text)}
 
 /* ── Inputs & Buttons ── */
-input[type=text],input[type=time],select,textarea{
+input[type=text],input[type=time],select,textarea,input[type=file]{
   background:var(--surface2);border:1px solid var(--border);color:var(--text);
   padding:8px 12px;border-radius:8px;font-size:13px;outline:none;
   transition:border-color .15s;width:100%
+}
+
+.chat-thread{
+  max-height:calc(100vh - 320px);
+  overflow-y:auto;
+  display:flex;
+  flex-direction:column;
+  gap:10px;
+  padding:12px;
+  border:1px solid var(--border);
+  border-radius:14px;
+  background:rgba(15,23,42,.9);
+}
+.chat-bubble{
+  max-width:75%;
+  padding:12px 14px;
+  border-radius:18px;
+  position:relative;
+  line-height:1.5;
+  word-break: break-word;
+}
+.chat-bubble.user{
+  align-self:flex-end;
+  background:linear-gradient(135deg, rgba(59,130,246,.9), rgba(125,211,252,.14));
+  color:#f8fafc;
+  border:1px solid rgba(96,165,250,.4);
+}
+.chat-bubble.bot{
+  align-self:flex-start;
+  background:rgba(255,255,255,.06);
+  color:#e2e8f0;
+  border:1px solid rgba(148,163,184,.2);
+}
+.chat-bubble .bubble-meta{
+  margin-top:8px;
+  font-size:11px;
+  color:var(--muted);
+  text-align:right;
+}
+.chat-bubble img{
+  max-width:100%;
+  border-radius:12px;
+  margin-top:8px;
 }
 input[type=text]:focus,input[type=time]:focus,select:focus{border-color:var(--accent)}
 .field{margin-bottom:12px}
@@ -658,10 +726,14 @@ input[type=text]:focus,input[type=time]:focus,select:focus{border-color:var(--ac
       <label>Mensaje</label>
       <textarea id="send-text" rows="4" placeholder="Escribí tu mensaje aquí..."></textarea>
     </div>
+    <div class="field">
+      <label>Imagen opcional</label>
+      <input type="file" id="send-image" accept="image/*">
+    </div>
     <button class="btn btn-primary" id="send-message-btn" onclick="sendDashboardMessage()">Enviar y responder</button>
   </div>
-  <div class="msg-list" id="all-msgs">
-    <div class="empty">Esperando mensajes...</div>
+  <div class="chat-thread" id="chat-thread">
+    <div class="empty">Seleccioná un chat para ver el historial y enviar mensajes</div>
   </div>
 </div>
 
@@ -833,6 +905,35 @@ function msgCard(m, prepend = false) {
   return d;
 }
 
+function chatBubble(content, role, timestamp) {
+  const d = document.createElement('div');
+  d.className = 'chat-bubble ' + role;
+  const textHtml = content.text ? '<div>' + esc(content.text).replace(/\n/g, '<br>') + '</div>' : '';
+  const imageHtml = content.imageUrl ? '<img src="' + esc(content.imageUrl) + '" alt="Imagen" />' : '';
+  d.innerHTML = textHtml + imageHtml +
+    '<div class="bubble-meta">' + fmtTime(timestamp) + '</div>';
+  return d;
+}
+
+function renderChatHistory(logs) {
+  const thread = document.getElementById('chat-thread');
+  if (!thread) return;
+  if (!logs || !logs.length) {
+    thread.innerHTML = '<div class="empty">Seleccioná un chat para ver el historial y enviar mensajes</div>';
+    return;
+  }
+  thread.innerHTML = '';
+  logs.forEach((log) => {
+    const timestamp = log.timestamp || new Date().toISOString();
+    const userBubble = chatBubble({ text: log.text }, 'user', timestamp);
+    thread.appendChild(userBubble);
+    if (log.response) {
+      const botBubble = chatBubble({ text: log.response }, 'bot', timestamp);
+      thread.appendChild(botBubble);
+    }
+  });
+}
+
 // ── Tabs ───────────────────────────────────────────────────────────────────
 function goToTab(id) {
   document.querySelectorAll('.tab-content').forEach(t => t.classList.remove('active'));
@@ -949,31 +1050,10 @@ async function loadStatus() {
         allEl.innerHTML = '';
         d.messages.slice(0, 50).forEach(m => allEl.appendChild(msgCard(m)));
       }
-      const sendPhone = document.getElementById('send-phone');
-      if (sendPhone) {
-        const uniquePhones = [];
-        d.messages.forEach(m => {
-          if (m.phone && !uniquePhones.includes(m.phone)) uniquePhones.push(m.phone);
-        });
-        if (uniquePhones.length) {
-          sendPhone.innerHTML = uniquePhones.map(phone => {
-            const mask = phone.slice(-4).padStart(phone.length, '*');
-            return '<option value="' + phone + '">' + mask + '</option>';
-          }).join('');
-          document.getElementById('send-message-btn').disabled = false;
-        } else {
-          sendPhone.innerHTML = '<option value="">No hay chats disponibles</option>';
-          document.getElementById('send-message-btn').disabled = true;
-        }
-      }
-    } else {
-      const sendPhone = document.getElementById('send-phone');
-      if (sendPhone) {
-        sendPhone.innerHTML = '<option value="">No hay chats disponibles</option>';
-        document.getElementById('send-message-btn').disabled = true;
-      }
     }
-  } catch {
+    await loadChatList();
+  } catch (err) {
+    console.error('[dashboard] Error cargando estado:', err);
     document.getElementById('status-badge').textContent = '● Offline';
     document.getElementById('status-badge').className = 'topbar-badge badge-off';
   }
@@ -981,6 +1061,48 @@ async function loadStatus() {
 
 // ── Calendar & Reminders ──────────────────────────────────────────────────
 let _calAccounts = [];
+
+async function loadChatList() {
+  try {
+    const data = await fetch('/api/chats').then(r => r.json());
+    const select = document.getElementById('send-phone');
+    const btn = document.getElementById('send-message-btn');
+    if (!select) return;
+
+    const chats = data.chats || [];
+    if (!chats.length) {
+      select.innerHTML = '<option value="">No hay chats disponibles</option>';
+      if (btn) btn.disabled = true;
+      renderChatHistory([]);
+      return;
+    }
+
+    select.innerHTML = chats.map(phone => {
+      const mask = phone.slice(-4).padStart(phone.length, '*');
+      return '<option value="' + phone + '">' + mask + '</option>';
+    }).join('');
+    if (btn) btn.disabled = false;
+    select.onchange = () => loadChatHistory(select.value);
+    await loadChatHistory(select.value);
+  } catch (err) {
+    console.error('Error cargando chats:', err);
+  }
+}
+
+async function loadChatHistory(phone) {
+  try {
+    const thread = document.getElementById('chat-thread');
+    if (!thread) return;
+    if (!phone) {
+      renderChatHistory([]);
+      return;
+    }
+    const data = await fetch('/api/messages/log?phone=' + encodeURIComponent(phone)).then(r => r.json());
+    renderChatHistory(data.logs || []);
+  } catch (err) {
+    console.error('Error cargando historial de chat:', err);
+  }
+}
 
 async function loadCalendar() {
   // Fetch accounts if not yet loaded (populate selector)
@@ -1200,23 +1322,40 @@ async function runTaskNow(id) {
 async function sendDashboardMessage() {
   const phoneEl = document.getElementById('send-phone');
   const textEl = document.getElementById('send-text');
+  const imageEl = document.getElementById('send-image');
   const btn = document.getElementById('send-message-btn');
   const phone = String(phoneEl?.value || '').trim();
   const text = String(textEl?.value || '').trim();
+  const file = imageEl?.files?.[0] || null;
 
-  if (!phone || !text) {
-    showToast('Seleccioná un chat y escribí un mensaje', false);
+  if (!phone || (!text && !file)) {
+    showToast('Seleccioná un chat y escribí un mensaje o subí una imagen', false);
     return;
   }
 
   btn.disabled = true;
   btn.textContent = '⏳ Enviando...';
 
+  let image = null;
+  if (file) {
+    const reader = new FileReader();
+    image = await new Promise((resolve, reject) => {
+      reader.onload = () => {
+        const base64 = reader.result.split(',')[1];
+        resolve({ base64, mimeType: file.type });
+      };
+      reader.onerror = reject;
+      reader.readAsDataURL(file);
+    });
+  }
+
   try {
+    const body = { phone, text };
+    if (image) body.image = image;
     const r = await fetch('/api/messages/send', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ phone, text }),
+      body: JSON.stringify(body),
     }).then(r => r.json());
 
     if (r.error) {
@@ -1226,11 +1365,8 @@ async function sendDashboardMessage() {
 
     showToast('✅ Mensaje enviado y bot respondió');
     textEl.value = '';
-    const allEl = document.getElementById('all-msgs');
-    if (allEl) {
-      if (allEl.querySelector('.empty')) allEl.innerHTML = '';
-      allEl.prepend(msgCard({ from: phone, text, response: r.reply, timestamp: new Date().toISOString() }, true));
-    }
+    if (imageEl) imageEl.value = '';
+    await loadChatHistory(phone);
   } catch (err) {
     showToast('Error de conexión', false);
   } finally {
