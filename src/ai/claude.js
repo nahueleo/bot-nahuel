@@ -287,6 +287,30 @@ function sanitizeHistory(history) {
   return arr;
 }
 
+function normalizeMessageForProvider(msg) {
+  if (!msg || typeof msg !== 'object') return msg;
+  const normalized = { role: msg.role };
+  if (msg.content !== undefined) normalized.content = msg.content;
+  if (msg.name) normalized.name = msg.name;
+  if (msg.tool_calls) {
+    normalized.tool_calls = msg.tool_calls.map((tc) => ({
+      id: tc.id,
+      function: {
+        name: tc.function?.name,
+        arguments: tc.function?.arguments,
+      },
+    }));
+  }
+  if (msg.tool_call_id) normalized.tool_call_id = msg.tool_call_id;
+  if (msg.type) normalized.type = msg.type;
+  if (msg.image_url) normalized.image_url = msg.image_url;
+  return normalized;
+}
+
+function normalizeHistoryMessages(history) {
+  return history.map(normalizeMessageForProvider);
+}
+
 /**
  * Procesa un mensaje con Claude vía OpenRouter, ejecutando tools
  * en loop hasta obtener respuesta de texto final.
@@ -301,7 +325,7 @@ export async function processMessage(userMessage, history, imageContent = null) 
   const rawHistory = history || [];
 
   // Sanitize history to remove any trailing incomplete agentic turns saved from a previous MAX_LOOPS scenario
-  const cleanHistory = sanitizeHistory(rawHistory);
+  const cleanHistory = normalizeHistoryMessages(sanitizeHistory(rawHistory));
 
   console.log(`[ai] processMessage  historial=${cleanHistory.length} msgs  imagen=${imageContent ? 'sí' : 'no'}  texto="${userMessage.slice(0, 80)}"`);
   if (cleanHistory.length > 0) {
@@ -415,7 +439,7 @@ export async function processMessage(userMessage, history, imageContent = null) 
     const assistantMsg = choice.message;
     const finishReason = choice.finish_reason;
     console.log(`[ai] respuesta  finish_reason=${finishReason}  tool_calls=${assistantMsg.tool_calls?.length ?? 0}  tokens=${response.usage?.total_tokens ?? '?'}`);
-    currentMessages.push(assistantMsg);
+    currentMessages.push(normalizeMessageForProvider(assistantMsg));
 
     // Sin tool calls → tenemos la respuesta final
     if (!assistantMsg.tool_calls || assistantMsg.tool_calls.length === 0) {
@@ -473,7 +497,7 @@ export async function processMessage(userMessage, history, imageContent = null) 
  * con imagen (base64) por una versión texto-only para evitar inflar el almacenamiento.
  */
 function buildUpdatedHistory(currentMessages, cleanHistoryLength, imageContent, userMessage) {
-  const raw = currentMessages.slice(1); // quitar system message
+  const raw = currentMessages.slice(1).map(normalizeMessageForProvider); // quitar system message
   if (!imageContent) return raw;
 
   // El mensaje del usuario con imagen está en la posición cleanHistoryLength
