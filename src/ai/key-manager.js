@@ -166,6 +166,9 @@ class KeyManager {
         } else if (err.status === 404) {
           console.warn(`[key-manager] 404 en ${key.id} (endpoint o modelo no encontrado). Rotando sin deshabilitar...`);
           // continuar con la siguiente key
+        } else if (err.status === 400) {
+          console.warn(`[key-manager] 400 en ${key.id}. Rotando para intentar con otra key...`);
+          // continuar con la siguiente key — 400 puede ser transiente o formato incompatible con este modelo
         } else {
           throw err; // error de red, 5xx, etc. — no rotar
         }

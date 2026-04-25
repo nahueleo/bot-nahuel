@@ -310,7 +310,21 @@ function normalizeMessageForProvider(msg) {
 }
 
 function normalizeHistoryMessages(history) {
-  return history.map(normalizeMessageForProvider);
+  const normalized = history.map(normalizeMessageForProvider);
+  // Merge consecutive user messages — Gemini and some providers reject them with 400
+  const merged = [];
+  for (const msg of normalized) {
+    const prev = merged[merged.length - 1];
+    if (prev && prev.role === 'user' && msg.role === 'user') {
+      // Combine into a single user message
+      const prevText  = typeof prev.content === 'string' ? prev.content : JSON.stringify(prev.content);
+      const curText   = typeof msg.content  === 'string' ? msg.content  : JSON.stringify(msg.content);
+      prev.content = prevText + '\n' + curText;
+    } else {
+      merged.push(msg);
+    }
+  }
+  return merged;
 }
 
 /**
@@ -523,15 +537,19 @@ export async function processMessage(userMessage, history, imageContent = null) 
 /**
  * Construye el historial a guardar en Redis, reemplazando el mensaje del usuario
  * con imagen (base64) por una versión texto-only para evitar inflar el almacenamiento.
+ *
+ * Detecta el mensaje de imagen por su contenido (array con image_url), no por índice,
+ * para que sea robusto cuando el budget trimmer corta el historial previo.
  */
-function buildUpdatedHistory(currentMessages, cleanHistoryLength, imageContent, userMessage) {
+function buildUpdatedHistory(currentMessages, _cleanHistoryLength, imageContent, userMessage) {
   const raw = currentMessages.slice(1).map(normalizeMessageForProvider); // quitar system message
   if (!imageContent) return raw;
 
-  // El mensaje del usuario con imagen está en la posición cleanHistoryLength
-  return [
-    ...raw.slice(0, cleanHistoryLength),
-    { role: 'user', content: userMessage },
-    ...raw.slice(cleanHistoryLength + 1),
-  ];
+  // Reemplazar el mensaje de usuario que contiene image_url con la versión texto-only
+  return raw.map(msg => {
+    if (msg.role === 'user' && Array.isArray(msg.content)) {
+      return { role: 'user', content: userMessage || 'Describí esta imagen' };
+    }
+    return msg;
+  });
 }
