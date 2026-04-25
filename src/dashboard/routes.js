@@ -908,10 +908,7 @@ function msgCard(m, prepend = false) {
 function chatBubble(content, role, timestamp) {
   const d = document.createElement('div');
   d.className = 'chat-bubble ' + role;
-  const textHtml = content.text ? '<div>' + esc(content.text).replace(/\n/g, '<br>') + '</div>' : '';
-  const imageHtml = content.imageUrl ? '<img src="' + esc(content.imageUrl) + '" alt="Imagen" />' : '';
-  d.innerHTML = textHtml + imageHtml +
-    '<div class="bubble-meta">' + fmtTime(timestamp) + '</div>';
+    const textHtml = content.text ? '<div>' + esc(content.text).replace(/\\n/g, '<br>') + '</div>' : '';
   return d;
 }
 
