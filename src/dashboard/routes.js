@@ -117,11 +117,15 @@ router.post('/api/messages/send', async (req, res) => {
 router.get('/api/chats', async (req, res) => {
   try {
     const redis = await getRedisClient();
-    const [convKeys, logRaw] = await Promise.all([
+    // Fuente principal: set persistente sin TTL
+    // Fallback: conv:* (activos) + msgs:log (historial reciente)
+    const [persistent, convKeys, logRaw] = await Promise.all([
+      redis.sMembers('phones:contacts'),
       redis.keys('conv:*'),
       redis.lRange('msgs:log', 0, 499),
     ]);
-    const phones = new Set(convKeys.map(k => k.replace(/^conv:/, '')));
+    const phones = new Set(persistent);
+    convKeys.forEach(k => phones.add(k.replace(/^conv:/, '')));
     for (const raw of logRaw) {
       try { const e = JSON.parse(raw); if (e.phone) phones.add(e.phone); } catch { /* skip */ }
     }
@@ -1046,10 +1050,16 @@ sse.addEventListener('message', e => {
     ovEl.prepend(msgCard(m, true));
     while (ovEl.children.length > 50) ovEl.lastChild.remove();
   }
-  // Refresh active chat thread on any new message
+  // Agregar el nuevo mensaje al chat sin re-renderizar todo
   const phone = document.getElementById('send-phone')?.value;
   if (phone && document.getElementById('tab-messages')?.classList.contains('active')) {
-    loadChatHistory(phone);
+    const thread = document.getElementById('chat-thread');
+    if (thread && !thread.querySelector('.wa-empty')) {
+      const now = new Date().toISOString();
+      if (m.text)     thread.appendChild(chatBubble({ text: m.text },     'user', now));
+      if (m.response) thread.appendChild(chatBubble({ text: m.response }, 'bot',  now));
+      thread.scrollTop = thread.scrollHeight;
+    }
   }
 });
 
@@ -1132,7 +1142,8 @@ async function loadStatus() {
       const ovEl = document.getElementById('overview-msgs');
       if (ovEl) { ovEl.innerHTML = ''; d.messages.slice(0, 5).forEach(m => ovEl.appendChild(msgCard(m))); }
     }
-    await loadChatList();
+    // Solo carga la lista de chats en el init, no en cada poll de 10 segundos
+    if (!_chatListLoaded) { _chatListLoaded = true; await loadChatList(); }
   } catch (err) {
     console.error('[dashboard] Error cargando estado:', err);
     document.getElementById('status-badge').textContent = '● Offline';
@@ -1145,7 +1156,6 @@ let _calAccounts = [];
 
 async function loadChatList() {
   try {
-    const data = await fetch('/api/chats').then(r => r.json());
     const select = document.getElementById('send-phone');
     const btn = document.getElementById('send-message-btn');
     const contactLabel = document.getElementById('wa-active-contact');
@@ -1153,7 +1163,16 @@ async function loadChatList() {
     const pickerList = document.getElementById('wa-chat-picker-list');
     if (!select) return;
 
-    const chats = data.chats || [];
+    // Obtener chats — si /api/chats devuelve vacío, extraer teléfonos del log
+    let chats = (await fetch('/api/chats').then(r => r.json()).catch(() => ({}))).chats || [];
+    if (!chats.length) {
+      const logData = await fetch('/api/messages/log').then(r => r.json()).catch(() => ({}));
+      const seen = new Set();
+      for (const m of (logData.logs || [])) {
+        if (m.phone && !seen.has(m.phone)) { seen.add(m.phone); chats.push(m.phone); }
+      }
+    }
+
     if (!chats.length) {
       select.innerHTML = '<option value="">Sin chats</option>';
       if (btn) btn.disabled = true;

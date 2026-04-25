@@ -85,8 +85,10 @@ export async function logMessage(from, text, response, success) {
     success,
     timestamp: new Date().toISOString(),
   });
-  await redis.lPush('msgs:log', entry);
-  await redis.lTrim('msgs:log', 0, MAX_LOG_ENTRIES - 1);
+  await Promise.all([
+    redis.lPush('msgs:log', entry).then(() => redis.lTrim('msgs:log', 0, MAX_LOG_ENTRIES - 1)),
+    redis.sAdd('phones:contacts', from),  // set persistente, sin TTL
+  ]);
 }
 
 /**
