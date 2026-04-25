@@ -117,9 +117,15 @@ router.post('/api/messages/send', async (req, res) => {
 router.get('/api/chats', async (req, res) => {
   try {
     const redis = await getRedisClient();
-    const keys = await redis.keys('conv:*');
-    const phones = keys.map((key) => key.replace(/^conv:/, '')).sort();
-    res.json({ chats: phones });
+    const [convKeys, logRaw] = await Promise.all([
+      redis.keys('conv:*'),
+      redis.lRange('msgs:log', 0, 499),
+    ]);
+    const phones = new Set(convKeys.map(k => k.replace(/^conv:/, '')));
+    for (const raw of logRaw) {
+      try { const e = JSON.parse(raw); if (e.phone) phones.add(e.phone); } catch { /* skip */ }
+    }
+    res.json({ chats: [...phones].filter(Boolean).sort() });
   } catch (err) {
     console.error('[dashboard] Error obteniendo chats:', err.message || err);
     res.status(500).json({ error: 'Error obteniendo chats' });
@@ -550,7 +556,6 @@ input[type=text]:focus,input[type=time]:focus,select:focus{border-color:var(--ac
 <nav class="sidebar">
   <div class="nav-section">Principal</div>
   <div class="nav-item active" data-tab="overview"><span class="nav-icon">📊</span> Dashboard</div>
-  <div class="nav-item" data-tab="messages">       <span class="nav-icon">💬</span> Mensajes</div>
   <div class="nav-item" data-tab="tasks">          <span class="nav-icon">⚙️</span> Tareas programadas</div>
 
   <div class="nav-section">Conectores</div>
