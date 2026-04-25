@@ -589,9 +589,10 @@ input[type=text]:focus,input[type=time]:focus,select:focus{border-color:var(--ac
 .tool-row-desc{font-size:11px;color:var(--muted);flex:2}
 .tool-config{padding:14px;background:rgba(0,0,0,.2);border-top:1px solid var(--border)}
 .multi-select-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:6px;margin-top:4px}
-.ms-chip{display:flex;align-items:center;gap:6px;padding:5px 10px;border:1px solid var(--border);border-radius:8px;cursor:pointer;font-size:12px;background:var(--surface2);transition:all .15s}
+.ms-chip{display:flex;align-items:center;gap:6px;padding:5px 10px;border:1px solid var(--border);border-radius:8px;cursor:pointer;font-size:12px;background:var(--surface2);transition:all .15s;user-select:none}
 .ms-chip.selected{background:rgba(59,130,246,.15);border-color:var(--accent);color:#f1f5f9}
-.ms-chip input{display:none}
+.ms-chip::before{content:"";width:10px;height:10px;border:1.5px solid var(--border);border-radius:3px;flex-shrink:0;transition:all .15s}
+.ms-chip.selected::before{content:"✓";background:var(--accent);border-color:var(--accent);color:white;font-size:8px;display:flex;align-items:center;justify-content:center;line-height:1}
 
 /* ── WhatsApp Messages Tab ── */
 #tab-messages.active{display:flex!important;flex-direction:column;height:100%;overflow:hidden;position:relative}
@@ -1531,10 +1532,10 @@ function renderToolConfigFields(tool) {
       const selected = Array.isArray(cfg[field.key]) ? cfg[field.key] : (tool.defaultConfig?.[field.key] ?? []);
       const chips = field.options.map(o => {
         const isSel = selected.includes(o.value);
-        return '<label class="ms-chip ' + (isSel?'selected':'') + '" ' +
+        return '<div class="ms-chip ' + (isSel?'selected':'') + '" ' +
           'data-tool="' + escHtml(tool.id) + '" data-key="' + escHtml(field.key) + '" data-val="' + escHtml(o.value) + '" ' +
           'onclick="togglePreviewMulti(this.dataset.tool,this.dataset.key,this.dataset.val,this)">' +
-          '<input type="checkbox" ' + (isSel?'checked':'') + '>' + escHtml(o.label) + '</label>';
+          escHtml(o.label) + '</div>';
       }).join('');
       return '<div class="field"><label>' + field.label + '</label>' +
         '<div class="multi-select-grid" style="margin-top:6px">' + chips + '</div></div>';
@@ -1554,14 +1555,13 @@ function onPreviewConfigChange(toolId, key, value) {
   if (toolId === _selectedToolId) _toolPreviewConfig[key] = value;
 }
 
-function togglePreviewMulti(toolId, key, value, labelEl) {
+function togglePreviewMulti(toolId, key, value, el) {
   if (toolId !== _selectedToolId) return;
   const arr = _toolPreviewConfig[key] || [];
   const idx = arr.indexOf(value);
   if (idx === -1) arr.push(value); else arr.splice(idx, 1);
   _toolPreviewConfig[key] = arr;
-  labelEl.classList.toggle('selected', idx === -1);
-  labelEl.querySelector('input').checked = idx === -1;
+  el.classList.toggle('selected', idx === -1);
 }
 
 async function previewSelectedTool() {
@@ -1979,10 +1979,10 @@ function renderToolsInModal() {
         const selected = Array.isArray(cfg[field.key]) ? cfg[field.key] : (tool.defaultConfig?.[field.key] ?? []);
         const chips = field.options.map(o => {
           const isSel = selected.includes(o.value);
-          return '<label class="ms-chip ' + (isSel?'selected':'') + '" ' +
+          return '<div class="ms-chip ' + (isSel?'selected':'') + '" ' +
             'data-tool="' + tid + '" data-key="' + fkey + '" data-val="' + escHtml(o.value) + '" ' +
             'onclick="toggleMultiSelect(this.dataset.tool,this.dataset.key,this.dataset.val,this)">' +
-            '<input type="checkbox" ' + (isSel?'checked':'') + '>' + escHtml(o.label) + '</label>';
+            escHtml(o.label) + '</div>';
         }).join('');
         return '<div class="field" style="margin-bottom:8px"><label style="font-size:11px">' + field.label + '</label>' +
           '<div class="multi-select-grid">' + chips + '</div></div>';
@@ -2035,7 +2035,7 @@ function onToolConfigChange(toolId, key, value) {
   _toolStates[toolId].config[key] = value;
 }
 
-function toggleMultiSelect(toolId, key, value, labelEl) {
+function toggleMultiSelect(toolId, key, value, el) {
   if (!_toolStates[toolId]) {
     const def = _allTools.find(t => t.id === toolId);
     _toolStates[toolId] = { enabled: true, config: JSON.parse(JSON.stringify(def?.defaultConfig ?? {})) };
@@ -2045,8 +2045,7 @@ function toggleMultiSelect(toolId, key, value, labelEl) {
   if (idx === -1) arr.push(value);
   else arr.splice(idx, 1);
   _toolStates[toolId].config[key] = arr;
-  labelEl.classList.toggle('selected', idx === -1);
-  labelEl.querySelector('input').checked = idx === -1;
+  el.classList.toggle('selected', idx === -1);
 }
 
 async function saveTask() {
