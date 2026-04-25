@@ -3,12 +3,13 @@ import { listConnectedAccounts } from '../auth/google.js';
 import { getHistory, setHistory, getMessageLog, logMessage } from '../conversation/store.js';
 import { getRedisClient } from '../redis/client.js';
 import { getPendingReminders } from '../redis/reminders.js';
-import { getTasksConfig, updateTask, getTaskLog } from '../redis/tasks.js';
+import { getAllTasks, getTaskById, createTask, updateTask, deleteTask as deleteScheduledTask, getTaskLog, migrateLegacyConfig } from '../redis/tasks.js';
 import { sendWhatsAppMessage } from '../whatsapp/api.js';
 import { processMessage } from '../ai/claude.js';
 import { listAllCalendars, getEvents } from '../calendar/client.js';
-import { runMorningBriefing } from '../tasks/morning-briefing.js';
-import { syncScheduler } from '../tasks/scheduler.js';
+import { runTask } from '../tasks/task-executor.js';
+import { syncScheduler, getScheduleDescription } from '../tasks/scheduler.js';
+import { getToolDescriptors } from '../tasks/tool-registry.js';
 import { searchEmails, getUnreadCount, markAsRead } from '../gmail/client.js';
 import { getTasks, completeTask, deleteTask } from '../tasks/client.js';
 
