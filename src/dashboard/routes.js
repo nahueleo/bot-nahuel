@@ -1459,10 +1459,12 @@ function renderTaskCard(task) {
     return '<span class="tool-chip">' + def.emoji + ' ' + def.name + '</span>';
   }).join('');
 
-  return '<div class="task-card" id="tcard-' + task.id + '">' +
+  const id   = escHtml(task.id);
+  const name = escHtml(task.name);
+  return '<div class="task-card" id="tcard-' + id + '" data-id="' + id + '" data-name="' + name + '">' +
     '<div class="task-card-head">' +
       '<div class="task-card-emoji">' + (task.emoji || '🤖') + '</div>' +
-      '<div class="task-card-name">' + escHtml(task.name) + '</div>' +
+      '<div class="task-card-name">' + name + '</div>' +
       '<span class="task-status ' + (task.enabled ? 'on' : 'off') + '" style="font-size:11px;padding:3px 10px;border-radius:20px;font-weight:600;margin-left:4px">' +
         (task.enabled ? 'Activa' : 'Inactiva') + '</span>' +
     '</div>' +
@@ -1472,12 +1474,12 @@ function renderTaskCard(task) {
     '</div>' +
     (toolChips ? '<div class="task-card-tools">' + toolChips + '</div>' : '') +
     '<div class="task-card-footer">' +
-      '<button class="btn btn-success" style="padding:6px 12px;font-size:12px" onclick="runTaskNow(\'' + task.id + '\',this)">▶ Enviar ahora</button>' +
-      '<button class="btn btn-ghost" style="padding:6px 12px;font-size:12px" onclick="openTaskModal(\'' + task.id + '\')">✏️ Editar</button>' +
-      '<button class="btn btn-ghost" style="padding:6px 12px;font-size:12px" onclick="showTaskLog(\'' + task.id + '\',\'' + escHtml(task.name) + '\')">📋 Logs</button>' +
-      '<button class="btn btn-ghost" style="padding:6px 12px;font-size:12px;color:var(--red)" onclick="deleteTask(\'' + task.id + '\',\'' + escHtml(task.name) + '\')">🗑</button>' +
+      '<button class="btn btn-success" style="padding:6px 12px;font-size:12px" data-id="' + id + '" onclick="runTaskNow(this.dataset.id,this)">▶ Enviar ahora</button>' +
+      '<button class="btn btn-ghost" style="padding:6px 12px;font-size:12px" data-id="' + id + '" onclick="openTaskModal(this.dataset.id)">✏️ Editar</button>' +
+      '<button class="btn btn-ghost" style="padding:6px 12px;font-size:12px" data-id="' + id + '" data-name="' + name + '" onclick="showTaskLog(this.dataset.id,this.dataset.name)">📋 Logs</button>' +
+      '<button class="btn btn-ghost" style="padding:6px 12px;font-size:12px;color:var(--red)" data-id="' + id + '" data-name="' + name + '" onclick="deleteTask(this.dataset.id,this.dataset.name)">🗑</button>' +
       '<label class="toggle" style="margin-left:auto" title="Activar/desactivar">' +
-        '<input type="checkbox" ' + (task.enabled ? 'checked' : '') + ' onchange="toggleTask(\'' + task.id + '\',this.checked)">' +
+        '<input type="checkbox" ' + (task.enabled ? 'checked' : '') + ' data-id="' + id + '" onchange="toggleTask(this.dataset.id,this.checked)">' +
         '<span class="slider"></span></label>' +
       '<span class="task-last-run">' + lastRunText + '</span>' +
     '</div>' +
@@ -1637,39 +1639,44 @@ function renderToolsInModal() {
     const cfg    = state.config || {};
     const isOn   = !!state.enabled;
 
-    // Build config fields HTML
+    // Build config fields HTML — all event handlers use data-* to avoid quote escaping
+    const tid = escHtml(tool.id);
     const fieldsHtml = (tool.configFields || []).map(field => {
+      const fkey = escHtml(field.key);
+      const dataAttrs = 'data-tool="' + tid + '" data-key="' + fkey + '"';
       if (field.type === 'text') {
         return '<div class="field" style="margin-bottom:8px"><label style="font-size:11px">' + field.label + '</label>' +
-          '<input type="text" data-tool="' + tool.id + '" data-key="' + field.key + '" ' +
-          'value="' + escHtml(cfg[field.key] ?? field.placeholder ?? '') + '" placeholder="' + escHtml(field.placeholder || '') + '" ' +
-          'oninput="onToolConfigChange(\'' + tool.id + '\',\'' + field.key + '\',this.value)"></div>';
+          '<input type="text" ' + dataAttrs + ' ' +
+          'value="' + escHtml(cfg[field.key] ?? '') + '" placeholder="' + escHtml(field.placeholder || '') + '" ' +
+          'oninput="onToolConfigChange(this.dataset.tool,this.dataset.key,this.value)"></div>';
       }
       if (field.type === 'number') {
         return '<div class="field" style="margin-bottom:8px"><label style="font-size:11px">' + field.label + '</label>' +
-          '<input type="number" min="' + (field.min||1) + '" max="' + (field.max||99) + '" data-tool="' + tool.id + '" data-key="' + field.key + '" ' +
+          '<input type="number" min="' + (field.min||1) + '" max="' + (field.max||99) + '" ' + dataAttrs + ' ' +
           'value="' + (cfg[field.key] ?? field.default ?? field.min ?? 1) + '" ' +
-          'oninput="onToolConfigChange(\'' + tool.id + '\',\'' + field.key + '\',+this.value)"></div>';
+          'oninput="onToolConfigChange(this.dataset.tool,this.dataset.key,+this.value)"></div>';
       }
       if (field.type === 'select') {
         const opts = field.options.map(o =>
           '<option value="' + escHtml(o.value) + '"' + (cfg[field.key]===o.value?' selected':'') + '>' + escHtml(o.label) + '</option>'
         ).join('');
         return '<div class="field" style="margin-bottom:8px"><label style="font-size:11px">' + field.label + '</label>' +
-          '<select data-tool="' + tool.id + '" data-key="' + field.key + '" onchange="onToolConfigChange(\'' + tool.id + '\',\'' + field.key + '\',this.value)">' + opts + '</select></div>';
+          '<select ' + dataAttrs + ' onchange="onToolConfigChange(this.dataset.tool,this.dataset.key,this.value)">' + opts + '</select></div>';
       }
       if (field.type === 'account-select') {
         const accs = _calAccounts || [];
         const opts = '<option value="">— Automático —</option>' +
           accs.map(a => '<option value="' + escHtml(a) + '"' + (cfg[field.key]===a?' selected':'') + '>' + escHtml(a) + '</option>').join('');
         return '<div class="field" style="margin-bottom:8px"><label style="font-size:11px">' + field.label + '</label>' +
-          '<select data-tool="' + tool.id + '" data-key="' + field.key + '" onchange="onToolConfigChange(\'' + tool.id + '\',\'' + field.key + '\',this.value)">' + opts + '</select></div>';
+          '<select ' + dataAttrs + ' onchange="onToolConfigChange(this.dataset.tool,this.dataset.key,this.value)">' + opts + '</select></div>';
       }
       if (field.type === 'multi-select') {
         const selected = Array.isArray(cfg[field.key]) ? cfg[field.key] : (tool.defaultConfig?.[field.key] ?? []);
         const chips = field.options.map(o => {
           const isSel = selected.includes(o.value);
-          return '<label class="ms-chip ' + (isSel?'selected':'') + '" onclick="toggleMultiSelect(\'' + tool.id + '\',\'' + field.key + '\',\'' + o.value + '\',this)">' +
+          return '<label class="ms-chip ' + (isSel?'selected':'') + '" ' +
+            'data-tool="' + tid + '" data-key="' + fkey + '" data-val="' + escHtml(o.value) + '" ' +
+            'onclick="toggleMultiSelect(this.dataset.tool,this.dataset.key,this.dataset.val,this)">' +
             '<input type="checkbox" ' + (isSel?'checked':'') + '>' + escHtml(o.label) + '</label>';
         }).join('');
         return '<div class="field" style="margin-bottom:8px"><label style="font-size:11px">' + field.label + '</label>' +
@@ -1677,22 +1684,22 @@ function renderToolsInModal() {
       }
       if (field.type === 'textarea') {
         return '<div class="field" style="margin-bottom:8px"><label style="font-size:11px">' + field.label + '</label>' +
-          '<textarea data-tool="' + tool.id + '" data-key="' + field.key + '" rows="3" placeholder="' + escHtml(field.placeholder||'') + '" ' +
-          'oninput="onToolConfigChange(\'' + tool.id + '\',\'' + field.key + '\',this.value)">' + escHtml(cfg[field.key]||'') + '</textarea></div>';
+          '<textarea ' + dataAttrs + ' rows="3" placeholder="' + escHtml(field.placeholder||'') + '" ' +
+          'oninput="onToolConfigChange(this.dataset.tool,this.dataset.key,this.value)">' + escHtml(cfg[field.key]||'') + '</textarea></div>';
       }
       return '';
     }).join('');
 
-    return '<div class="tool-row ' + (isOn?'enabled':'') + '" id="trow-' + tool.id + '">' +
-      '<div class="tool-row-head" onclick="toggleToolRow(\'' + tool.id + '\')">' +
+    return '<div class="tool-row ' + (isOn?'enabled':'') + '" id="trow-' + tid + '" data-tool="' + tid + '">' +
+      '<div class="tool-row-head" onclick="toggleToolRow(this.parentElement.dataset.tool)">' +
         '<span class="tool-row-emoji">' + tool.emoji + '</span>' +
         '<span class="tool-row-name">' + tool.name + '</span>' +
         '<span class="tool-row-desc">' + tool.description + '</span>' +
         '<label class="toggle" style="flex-shrink:0" onclick="event.stopPropagation()">' +
-          '<input type="checkbox" id="tool-toggle-' + tool.id + '" ' + (isOn?'checked':'') + ' onchange="onToolToggle(\'' + tool.id + '\',this.checked)">' +
+          '<input type="checkbox" id="tool-toggle-' + tid + '" data-tool="' + tid + '" ' + (isOn?'checked':'') + ' onchange="onToolToggle(this.dataset.tool,this.checked)">' +
           '<span class="slider"></span></label>' +
       '</div>' +
-      (tool.configFields.length ? '<div class="tool-config" id="tcfg-' + tool.id + '" style="display:' + (isOn?'block':'none') + '">' + fieldsHtml + '</div>' : '') +
+      (tool.configFields.length ? '<div class="tool-config" id="tcfg-' + tid + '" style="display:' + (isOn?'block':'none') + '">' + fieldsHtml + '</div>' : '') +
     '</div>';
   }).join('');
 }
