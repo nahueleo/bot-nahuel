@@ -17,6 +17,12 @@ import { getCurrentWeekId, getWeeklyMenu } from '../redis/weekly-menu.js';
 const DAYS_ES   = ['domingo','lunes','martes','miércoles','jueves','viernes','sábado'];
 const MONTHS_ES = ['enero','febrero','marzo','abril','mayo','junio','julio','agosto','septiembre','octubre','noviembre','diciembre'];
 
+function currentMenuDayIndex(offsetDays = 0) {
+  const nowART = new Date(new Date().toLocaleString('en-US', { timeZone: 'America/Argentina/Buenos_Aires' }));
+  const target = new Date(nowART.getFullYear(), nowART.getMonth(), nowART.getDate() + offsetDays);
+  return (target.getDay() + 6) % 7; // Monday=0 ... Sunday=6
+}
+
 function todayRange(offsetDays = 0) {
   const nowART = new Date(new Date().toLocaleString('en-US', { timeZone: 'America/Argentina/Buenos_Aires' }));
   const base = new Date(nowART.getFullYear(), nowART.getMonth(), nowART.getDate() + offsetDays);
@@ -339,8 +345,8 @@ const TOOLS = [
     id: 'weekly_menu',
     name: 'Menú semanal',
     emoji: '🍱',
-    description: 'Envía el menú semanal low-carb guardado en Redis',
-    defaultConfig: { week: 'current' },
+    description: 'Envía el menú low-carb guardado en Redis: semana completa, hoy, u hoy y mañana',
+    defaultConfig: { week: 'current', scope: 'today' },
     configFields: [
       {
         key: 'week',
@@ -351,6 +357,16 @@ const TOOLS = [
           { value: 'next',    label: 'Semana próxima' },
         ],
       },
+      {
+        key: 'scope',
+        type: 'select',
+        label: 'Qué enviar',
+        options: [
+          { value: 'today',      label: 'Solo hoy' },
+          { value: 'today_next', label: 'Hoy y mañana' },
+          { value: 'full_week',  label: 'Semana completa' },
+        ],
+      },
     ],
     async run(cfg = {}) {
       const base = new Date();
@@ -359,10 +375,21 @@ const TOOLS = [
       const menu = await getWeeklyMenu(weekId);
       if (!menu) return `🍱 *Menú semanal (${weekId})*\nTodavía no hay menú generado para esta semana.`;
 
-      const lines = menu.days.map(d =>
+      const scope = cfg.scope || 'today';
+      let selectedDays = menu.days;
+      if (scope === 'today') {
+        selectedDays = [menu.days[currentMenuDayIndex(0)]].filter(Boolean);
+      } else if (scope === 'today_next') {
+        selectedDays = [menu.days[currentMenuDayIndex(0)], menu.days[currentMenuDayIndex(1)]].filter(Boolean);
+      }
+
+      const lines = selectedDays.map(d =>
         `*${d.day}*\n• Almuerzo: ${d.almuerzo}\n• Merienda: ${d.merienda}\n• Cena: ${d.cena}`
       ).join('\n\n');
-      return `🍱 *Menú semanal low-carb (${weekId})*\n\n${lines}`;
+      const title = scope === 'full_week'
+        ? `Menú semanal low-carb (${weekId})`
+        : `Menú low-carb (${weekId})`;
+      return `🍱 *${title}*\n\n${lines}`;
     },
   },
 
