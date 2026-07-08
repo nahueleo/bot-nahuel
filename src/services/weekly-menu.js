@@ -47,6 +47,7 @@ function parseJsonMenu(content, weekId) {
   }
 }
 
+
 function buildPrompt({ weekId, preferences, ingredients, trainingDays, cookidooResults }) {
   const cookidooLine = cookidooResults?.length
     ? cookidooResults.map(r => `- ${r.title}`).join('\n')
