@@ -8,7 +8,8 @@ import { getEvents } from '../calendar/client.js';
 import { searchEmails, getUnreadCount } from '../gmail/client.js';
 import { getTasks } from './client.js';
 import { listConnectedAccounts } from '../auth/google.js';
-import { getCurrentWeekId, getWeeklyMenu } from '../redis/weekly-menu.js';
+import { getCurrentWeekId, getWeeklyMenu, saveWeeklyMenu } from '../redis/weekly-menu.js';
+import { generateWeeklyMenu } from '../services/weekly-menu.js';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Calendar helpers
@@ -21,6 +22,18 @@ function currentMenuDayIndex(offsetDays = 0) {
   const nowART = new Date(new Date().toLocaleString('en-US', { timeZone: 'America/Argentina/Buenos_Aires' }));
   const target = new Date(nowART.getFullYear(), nowART.getMonth(), nowART.getDate() + offsetDays);
   return (target.getDay() + 6) % 7; // Monday=0 ... Sunday=6
+}
+
+function weekDiff(weekId, referenceWeekId) {
+  const a = new Date(`${weekId}T00:00:00-03:00`);
+  const b = new Date(`${referenceWeekId}T00:00:00-03:00`);
+  return Math.round((a.getTime() - b.getTime()) / (7 * 86_400_000));
+}
+
+function shouldUseCookidooForWeek(weekId, referenceWeekId, referenceUsesCookidoo = false) {
+  const diff = weekDiff(weekId, referenceWeekId);
+  const evenWeek = Math.abs(diff % 2) === 0;
+  return evenWeek ? referenceUsesCookidoo : !referenceUsesCookidoo;
 }
 
 function todayRange(offsetDays = 0) {
@@ -287,7 +300,7 @@ const TOOLS = [
     id: 'meal_suggestion',
     name: 'Comidas Low-Carb',
     emoji: '🍽️',
-    description: 'Receta argentina keto/low-carb para almuerzo, merienda o cena liviana',
+    description: 'Receta argentina keto/low-carb para almuerzo, merienda, cena liviana o día completo',
     defaultConfig: {
       mealType:    'almuerzo',
       ingredients: '',
@@ -300,6 +313,7 @@ const TOOLS = [
         type: 'select',
         label: 'Comida',
         options: [
+          { value: 'dia_completo', label: 'Día completo' },
           { value: 'almuerzo',     label: 'Almuerzo' },
           { value: 'merienda',     label: 'Merienda' },
           { value: 'cena_liviana', label: 'Cena muy liviana' },
@@ -393,7 +407,96 @@ const TOOLS = [
     },
   },
 
-  // ── 11. Mensaje personalizado ─────────────────────────────────────────────
+  // ── 11. Regenerar menú semanal ────────────────────────────────────────────
+  {
+    id: 'weekly_menu_regenerator',
+    name: 'Regenerar menú semanal',
+    emoji: '🔄',
+    description: 'Genera y guarda en Redis el menú de la semana, alternando Cookidoo semana por medio',
+    defaultConfig: {
+      targetWeek:             'current',
+      referenceWeekId:        getCurrentWeekId(),
+      referenceUsesCookidoo:  false,
+      preferences:            '',
+      ingredients:            '',
+      trainingDays:           '',
+    },
+    configFields: [
+      {
+        key: 'targetWeek',
+        type: 'select',
+        label: 'Semana a generar',
+        options: [
+          { value: 'current', label: 'Semana actual' },
+          { value: 'next',    label: 'Semana próxima' },
+        ],
+      },
+      {
+        key: 'referenceWeekId',
+        type: 'text',
+        label: 'Semana base de alternancia',
+        placeholder: 'Ej: 2026-07-06',
+      },
+      {
+        key: 'referenceUsesCookidoo',
+        type: 'select',
+        label: 'La semana base usó Cookidoo',
+        options: [
+          { value: false, label: 'No' },
+          { value: true,  label: 'Sí' },
+        ],
+      },
+      {
+        key: 'ingredients',
+        type: 'textarea',
+        label: 'Ingredientes a priorizar',
+        placeholder: 'Ej: pollo, huevos, zapallitos, queso cremoso',
+      },
+      {
+        key: 'preferences',
+        type: 'textarea',
+        label: 'Preferencias',
+        placeholder: 'Ej: cenas muy livianas, sin horno, evitar atún',
+      },
+      {
+        key: 'trainingDays',
+        type: 'textarea',
+        label: 'Días de entrenamiento',
+        placeholder: 'Ej: martes y jueves electrofitness, sábado fútbol',
+      },
+    ],
+    async run(cfg = {}) {
+      const base = new Date();
+      if (cfg.targetWeek === 'next') base.setDate(base.getDate() + 7);
+
+      const weekId = getCurrentWeekId(base);
+      const referenceWeekId = cfg.referenceWeekId || getCurrentWeekId();
+      const referenceUsesCookidoo = cfg.referenceUsesCookidoo === true || cfg.referenceUsesCookidoo === 'true';
+      const useCookidoo = shouldUseCookidooForWeek(weekId, referenceWeekId, referenceUsesCookidoo);
+
+      const menu = await generateWeeklyMenu({
+        weekId,
+        preferences: cfg.preferences,
+        ingredients: cfg.ingredients,
+        trainingDays: cfg.trainingDays,
+        useCookidoo,
+      });
+      await saveWeeklyMenu({
+        ...menu,
+        alternatingCookidoo: {
+          enabled: true,
+          referenceWeekId,
+          referenceUsesCookidoo,
+          useCookidoo,
+        },
+      });
+
+      const mode = useCookidoo ? 'con Cookidoo/Thermomix' : 'sin Cookidoo';
+      return `🔄 *Menú semanal regenerado*\nSemana: ${weekId}\nModo: ${mode}\nGuardado en Redis.`;
+    },
+  },
+
+  // ── 12. Mensaje personalizado ─────────────────────────────────────────────
   {
     id: 'custom',
     name: 'Mensaje personalizado',
