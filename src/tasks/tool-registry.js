@@ -8,6 +8,7 @@ import { getEvents } from '../calendar/client.js';
 import { searchEmails, getUnreadCount } from '../gmail/client.js';
 import { getTasks } from './client.js';
 import { listConnectedAccounts } from '../auth/google.js';
+import { getCurrentWeekId, getWeeklyMenu } from '../redis/weekly-menu.js';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Calendar helpers
@@ -333,7 +334,39 @@ const TOOLS = [
     },
   },
 
-  // ── 10. Mensaje personalizado ─────────────────────────────────────────────
+  // ── 10. Menú semanal guardado ─────────────────────────────────────────────
+  {
+    id: 'weekly_menu',
+    name: 'Menú semanal',
+    emoji: '🍱',
+    description: 'Envía el menú semanal low-carb guardado en Redis',
+    defaultConfig: { week: 'current' },
+    configFields: [
+      {
+        key: 'week',
+        type: 'select',
+        label: 'Semana',
+        options: [
+          { value: 'current', label: 'Semana actual' },
+          { value: 'next',    label: 'Semana próxima' },
+        ],
+      },
+    ],
+    async run(cfg = {}) {
+      const base = new Date();
+      if (cfg.week === 'next') base.setDate(base.getDate() + 7);
+      const weekId = getCurrentWeekId(base);
+      const menu = await getWeeklyMenu(weekId);
+      if (!menu) return `🍱 *Menú semanal (${weekId})*\nTodavía no hay menú generado para esta semana.`;
+
+      const lines = menu.days.map(d =>
+        `*${d.day}*\n• Almuerzo: ${d.almuerzo}\n• Merienda: ${d.merienda}\n• Cena: ${d.cena}`
+      ).join('\n\n');
+      return `🍱 *Menú semanal low-carb (${weekId})*\n\n${lines}`;
+    },
+  },
+
+  // ── 11. Mensaje personalizado ─────────────────────────────────────────────
   {
     id: 'custom',
     name: 'Mensaje personalizado',

@@ -12,6 +12,9 @@ import { syncScheduler } from '../tasks/scheduler.js';
 import { getToolDescriptors, getToolById as getToolByIdRegistry } from '../tasks/tool-registry.js';
 import { searchEmails, getUnreadCount, markAsRead } from '../gmail/client.js';
 import { getTasks, completeTask, deleteTask } from '../tasks/client.js';
+import { getCurrentWeekId, getWeeklyMenu, saveWeeklyMenu, listWeeklyMenus } from '../redis/weekly-menu.js';
+import { generateWeeklyMenu, regenerateWeeklyMenuDay, updateWeeklyMenuDay } from '../services/weekly-menu.js';
+import { searchCookidooRecipes } from '../services/cookidoo.js';
 
 const router = Router();
 const startTime = Date.now();
@@ -358,6 +361,87 @@ router.get('/api/tasks/:id/log', async (req, res) => {
   }
 });
 
+// ─── API: menú semanal low-carb ──────────────────────────────────────────────
+router.get('/api/weekly-menu', async (req, res) => {
+  try {
+    const weekId = String(req.query.week || getCurrentWeekId()).slice(0, 10);
+    const menu = await getWeeklyMenu(weekId);
+    const weeks = await listWeeklyMenus();
+    res.json({ weekId, menu, weeks });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+router.post('/api/weekly-menu/generate', async (req, res) => {
+  try {
+    const body = req.body || {};
+    const weekId = String(body.weekId || getCurrentWeekId()).slice(0, 10);
+    const menu = await generateWeeklyMenu({
+      weekId,
+      preferences: body.preferences,
+      ingredients: body.ingredients,
+      trainingDays: body.trainingDays,
+      useCookidoo: body.useCookidoo === true,
+    });
+    const stored = await saveWeeklyMenu(menu);
+    res.json({ ok: true, menu: stored });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+router.patch('/api/weekly-menu/:weekId/day/:dayIndex', async (req, res) => {
+  try {
+    const weekId = String(req.params.weekId || getCurrentWeekId()).slice(0, 10);
+    const dayIndex = Number(req.params.dayIndex);
+    if (!Number.isInteger(dayIndex) || dayIndex < 0 || dayIndex > 6) {
+      return res.status(400).json({ error: 'Día inválido' });
+    }
+    const menu = await getWeeklyMenu(weekId);
+    if (!menu) return res.status(404).json({ error: 'Menú no encontrado' });
+    const updated = updateWeeklyMenuDay(menu, dayIndex, req.body || {});
+    const stored = await saveWeeklyMenu(updated);
+    res.json({ ok: true, menu: stored });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+router.post('/api/weekly-menu/:weekId/day/:dayIndex/regenerate', async (req, res) => {
+  try {
+    const weekId = String(req.params.weekId || getCurrentWeekId()).slice(0, 10);
+    const dayIndex = Number(req.params.dayIndex);
+    if (!Number.isInteger(dayIndex) || dayIndex < 0 || dayIndex > 6) {
+      return res.status(400).json({ error: 'Día inválido' });
+    }
+    const menu = await getWeeklyMenu(weekId);
+    if (!menu) return res.status(404).json({ error: 'Menú no encontrado' });
+    const updated = await regenerateWeeklyMenuDay({
+      menu,
+      dayIndex,
+      preferences: req.body?.preferences,
+      ingredients: req.body?.ingredients,
+      trainingDays: req.body?.trainingDays,
+      useCookidoo: req.body?.useCookidoo === true,
+    });
+    const stored = await saveWeeklyMenu(updated);
+    res.json({ ok: true, menu: stored });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+router.get('/api/cookidoo/search', async (req, res) => {
+  try {
+    const query = String(req.query.q || 'keto').slice(0, 120);
+    const recipes = await searchCookidooRecipes(query, 10);
+    res.json({ recipes });
+  } catch (err) {
+    res.status(502).json({ error: err.message });
+  }
+});
+
 // ─── Dashboard HTML ───────────────────────────────────────────────────────────
 router.get('/dashboard', (req, res) => {
   res.setHeader('Content-Type', 'text/html; charset=utf-8');
@@ -515,6 +599,17 @@ input[type=text]:focus,input[type=time]:focus,select:focus{border-color:var(--ac
 .mt-8{margin-top:8px}
 .mt-12{margin-top:12px}
 
+/* ── Weekly menu ── */
+.weekly-menu-table{width:100%;border-collapse:separate;border-spacing:0;background:var(--surface);border:1px solid var(--border);border-radius:12px;overflow:hidden}
+.weekly-menu-table th{background:var(--surface2);color:var(--muted);font-size:11px;text-transform:uppercase;letter-spacing:.06em;text-align:left;padding:10px;border-bottom:1px solid var(--border)}
+.weekly-menu-table td{vertical-align:top;padding:12px;border-bottom:1px solid rgba(30,58,95,.45);font-size:13px;line-height:1.45}
+.weekly-menu-table tr:last-child td{border-bottom:none}
+.weekly-menu-day{font-weight:800;color:#f1f5f9;min-width:92px}
+.weekly-menu-actions{display:flex;gap:6px;flex-wrap:wrap}
+.weekly-menu-inputs{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-bottom:10px}
+.cookidoo-list{display:flex;flex-direction:column;gap:8px}
+.cookidoo-item{padding:10px 12px;border:1px solid var(--border);border-radius:8px;background:var(--surface2);font-size:13px}
+
 /* ── Accounts ── */
 .account-row{display:flex;align-items:center;gap:10px;padding:10px 0;border-bottom:1px solid rgba(30,58,95,.4)}
 .account-row:last-child{border:none}
@@ -665,6 +760,7 @@ input[type=text]:focus,input[type=time]:focus,select:focus{border-color:var(--ac
 <nav class="sidebar">
   <div class="nav-section">Principal</div>
   <div class="nav-item active" data-tab="overview">  <span class="nav-icon">📊</span> Dashboard</div>
+  <div class="nav-item" data-tab="weekly-menu">       <span class="nav-icon">🍽️</span> Menú semanal</div>
   <div class="nav-item" data-tab="tasks">            <span class="nav-icon">⚙️</span> Tareas programadas</div>
   <div class="nav-item" data-tab="tools">            <span class="nav-icon">🛠️</span> Herramientas</div>
 
@@ -758,6 +854,55 @@ input[type=text]:focus,input[type=time]:focus,select:focus{border-color:var(--ac
       </span>
     </div>
     <div id="overview-msgs" class="msg-list" style="max-height:320px"></div>
+  </div>
+</div>
+
+<!-- ════════════════════ TAB: MENÚ SEMANAL ════════════════════ -->
+<div class="tab-content" id="tab-weekly-menu">
+  <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:20px;flex-wrap:wrap;gap:10px">
+    <h2 style="font-size:18px;font-weight:700;color:#f1f5f9">🍽️ Menú Semanal Low-Carb</h2>
+    <div style="display:flex;gap:8px;flex-wrap:wrap">
+      <button class="btn btn-ghost" onclick="loadWeeklyMenu()">↻ Recargar</button>
+      <button class="btn btn-primary" onclick="generateWeeklyMenu()">Generar semana</button>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="weekly-menu-inputs">
+      <div class="field">
+        <label>Ingredientes a priorizar</label>
+        <textarea id="wm-ingredients" rows="3" placeholder="Ej: pollo, huevos, zapallitos, queso cremoso"></textarea>
+      </div>
+      <div class="field">
+        <label>Preferencias</label>
+        <textarea id="wm-preferences" rows="3" placeholder="Ej: sin horno, cenas muy livianas, evitar atún"></textarea>
+      </div>
+      <div class="field">
+        <label>Días de entrenamiento</label>
+        <textarea id="wm-training" rows="3" placeholder="Ej: martes y jueves electrofitness, sábado fútbol"></textarea>
+      </div>
+    </div>
+    <label style="display:flex;align-items:center;gap:8px;font-size:13px;color:var(--muted);cursor:pointer">
+      <input type="checkbox" id="wm-cookidoo"> Usar títulos de Cookidoo como inspiración
+    </label>
+  </div>
+
+  <div id="weekly-menu-status" class="empty" style="display:none"></div>
+  <div id="weekly-menu-table-wrap"></div>
+
+  <div class="grid-2" style="margin-top:16px">
+    <div class="card">
+      <div class="card-title">🔎 <span>Buscar en Cookidoo</span></div>
+      <div class="flex-row">
+        <input type="text" id="cookidoo-query" placeholder="Ej: pollo keto zucchini">
+        <button class="btn btn-ghost" onclick="searchCookidoo()">Buscar</button>
+      </div>
+      <div id="cookidoo-results" class="cookidoo-list mt-12"></div>
+    </div>
+    <div class="card">
+      <div class="card-title">💾 <span>Semanas guardadas en Redis</span></div>
+      <div id="weekly-menu-weeks"><div class="empty">Cargando...</div></div>
+    </div>
   </div>
 </div>
 
@@ -1185,6 +1330,7 @@ function goToTab(id) {
   if (id === 'calendar') loadCalendar();
   if (id === 'gmail') loadGmail();
   if (id === 'gtasks') loadGTasks();
+  if (id === 'weekly-menu') loadWeeklyMenu();
   if (id === 'tasks') loadTasks();
   if (id === 'tools') initToolsTab();
 }
@@ -1694,6 +1840,170 @@ async function loadCalendar() {
       '</div>'
     ).join('');
   } catch {}
+}
+
+// ── Weekly menu ────────────────────────────────────────────────────────────
+let _weeklyMenu = null;
+
+function setWeeklyStatus(text, isError = false) {
+  const el = document.getElementById('weekly-menu-status');
+  if (!el) return;
+  el.style.display = text ? 'block' : 'none';
+  el.style.color = isError ? 'var(--red)' : 'var(--muted)';
+  el.textContent = text || '';
+}
+
+async function loadWeeklyMenu(weekId) {
+  const wrap = document.getElementById('weekly-menu-table-wrap');
+  try {
+    setWeeklyStatus('Cargando menú semanal...');
+    const url = '/api/weekly-menu' + (weekId ? '?week=' + encodeURIComponent(weekId) : '');
+    const data = await fetch(url).then(r => r.json());
+    _weeklyMenu = data.menu;
+    renderWeeklyWeeks(data.weeks || [], data.weekId);
+    if (!_weeklyMenu) {
+      if (wrap) wrap.innerHTML = '<div class="empty">Todavía no hay menú para esta semana. Generá uno para dejarlo persistido en Redis.</div>';
+      setWeeklyStatus('');
+      return;
+    }
+    renderWeeklyMenu(_weeklyMenu);
+    setWeeklyStatus('');
+  } catch (err) {
+    if (wrap) wrap.innerHTML = '<div class="empty">Error cargando menú</div>';
+    setWeeklyStatus('Error cargando menú semanal', true);
+  }
+}
+
+function renderWeeklyWeeks(weeks, currentWeek) {
+  const el = document.getElementById('weekly-menu-weeks');
+  if (!el) return;
+  if (!weeks.length) {
+    el.innerHTML = '<div class="empty">Sin semanas guardadas todavía</div>';
+    return;
+  }
+  el.innerHTML = weeks.map(w =>
+    '<button class="btn ' + (w === currentWeek ? 'btn-primary' : 'btn-ghost') + '" style="margin:0 6px 6px 0" onclick="loadWeeklyMenu(\\'' + escHtml(w) + '\\')">' +
+      escHtml(w) +
+    '</button>'
+  ).join('');
+}
+
+function renderWeeklyMenu(menu) {
+  const wrap = document.getElementById('weekly-menu-table-wrap');
+  if (!wrap) return;
+  const generated = menu.updatedAt ? 'Actualizado: ' + fmt(menu.updatedAt) : '';
+  wrap.innerHTML =
+    '<div class="card" style="display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap">' +
+      '<div><div style="font-size:13px;color:var(--muted)">Semana desde <strong style="color:#f1f5f9">' + escHtml(menu.weekId) + '</strong></div>' +
+      '<div style="font-size:12px;color:var(--muted);margin-top:4px">' + escHtml(generated) + '</div></div>' +
+      '<div class="weekly-menu-actions">' +
+        '<button class="btn btn-ghost" onclick="generateWeeklyMenu()">Regenerar todo</button>' +
+      '</div>' +
+    '</div>' +
+    '<table class="weekly-menu-table">' +
+      '<thead><tr><th>Día</th><th>Almuerzo 13:00</th><th>Merienda 17:00</th><th>Cena liviana 21:00</th><th>Acciones</th></tr></thead>' +
+      '<tbody>' + menu.days.map((d, i) =>
+        '<tr>' +
+          '<td class="weekly-menu-day">' + escHtml(d.day) + '</td>' +
+          '<td><textarea id="wm-day-' + i + '-almuerzo" rows="3">' + escHtml(d.almuerzo) + '</textarea></td>' +
+          '<td><textarea id="wm-day-' + i + '-merienda" rows="3">' + escHtml(d.merienda) + '</textarea></td>' +
+          '<td><textarea id="wm-day-' + i + '-cena" rows="3">' + escHtml(d.cena) + '</textarea>' +
+            '<input type="text" id="wm-day-' + i + '-notes" value="' + escHtml(d.notes || '') + '" placeholder="Notas del día" style="margin-top:8px"></td>' +
+          '<td><div class="weekly-menu-actions">' +
+            '<button class="btn btn-success" onclick="saveWeeklyMenuDay(' + i + ')">Guardar</button>' +
+            '<button class="btn btn-ghost" onclick="regenerateWeeklyMenuDay(' + i + ')">Regenerar día</button>' +
+          '</div></td>' +
+        '</tr>'
+      ).join('') + '</tbody></table>';
+}
+
+function weeklyMenuPayload() {
+  return {
+    weekId: _weeklyMenu?.weekId,
+    ingredients: document.getElementById('wm-ingredients')?.value || _weeklyMenu?.ingredients || '',
+    preferences: document.getElementById('wm-preferences')?.value || _weeklyMenu?.preferences || '',
+    trainingDays: document.getElementById('wm-training')?.value || _weeklyMenu?.trainingDays || '',
+    useCookidoo: Boolean(document.getElementById('wm-cookidoo')?.checked),
+  };
+}
+
+async function generateWeeklyMenu() {
+  try {
+    setWeeklyStatus('Generando menú semanal y guardando en Redis...');
+    const data = await fetch('/api/weekly-menu/generate', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(weeklyMenuPayload()),
+    }).then(r => r.json());
+    if (data.error) { setWeeklyStatus(data.error, true); return; }
+    _weeklyMenu = data.menu;
+    renderWeeklyMenu(_weeklyMenu);
+    await loadWeeklyMenu(_weeklyMenu.weekId);
+    showToast('✅ Menú semanal generado');
+  } catch {
+    setWeeklyStatus('Error generando menú semanal', true);
+  }
+}
+
+async function saveWeeklyMenuDay(dayIndex) {
+  if (!_weeklyMenu) return;
+  const body = {
+    almuerzo: document.getElementById('wm-day-' + dayIndex + '-almuerzo')?.value || '',
+    merienda: document.getElementById('wm-day-' + dayIndex + '-merienda')?.value || '',
+    cena: document.getElementById('wm-day-' + dayIndex + '-cena')?.value || '',
+    notes: document.getElementById('wm-day-' + dayIndex + '-notes')?.value || '',
+  };
+  try {
+    const data = await fetch('/api/weekly-menu/' + encodeURIComponent(_weeklyMenu.weekId) + '/day/' + dayIndex, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    }).then(r => r.json());
+    if (data.error) { showToast('Error: ' + data.error, false); return; }
+    _weeklyMenu = data.menu;
+    renderWeeklyMenu(_weeklyMenu);
+    showToast('✅ Día guardado');
+  } catch { showToast('Error de conexión', false); }
+}
+
+async function regenerateWeeklyMenuDay(dayIndex) {
+  if (!_weeklyMenu) return;
+  try {
+    setWeeklyStatus('Regenerando ' + _weeklyMenu.days[dayIndex].day + '...');
+    const data = await fetch('/api/weekly-menu/' + encodeURIComponent(_weeklyMenu.weekId) + '/day/' + dayIndex + '/regenerate', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(weeklyMenuPayload()),
+    }).then(r => r.json());
+    if (data.error) { setWeeklyStatus(data.error, true); return; }
+    _weeklyMenu = data.menu;
+    renderWeeklyMenu(_weeklyMenu);
+    setWeeklyStatus('');
+    showToast('✅ Día regenerado');
+  } catch {
+    setWeeklyStatus('Error regenerando el día', true);
+  }
+}
+
+async function searchCookidoo() {
+  const el = document.getElementById('cookidoo-results');
+  const q = document.getElementById('cookidoo-query')?.value || 'keto';
+  if (!el) return;
+  el.innerHTML = '<div class="empty">Buscando...</div>';
+  try {
+    const data = await fetch('/api/cookidoo/search?q=' + encodeURIComponent(q)).then(r => r.json());
+    if (data.error) { el.innerHTML = '<div class="empty">Error: ' + escHtml(data.error) + '</div>'; return; }
+    const recipes = data.recipes || [];
+    if (!recipes.length) { el.innerHTML = '<div class="empty">Sin resultados públicos</div>'; return; }
+    el.innerHTML = recipes.map(r =>
+      '<div class="cookidoo-item">' +
+        '<div style="font-weight:700;color:#f1f5f9">' + escHtml(r.title) + '</div>' +
+        '<a href="' + escHtml(r.url) + '" target="_blank" rel="noopener noreferrer">Abrir colección en Cookidoo</a>' +
+      '</div>'
+    ).join('');
+  } catch {
+    el.innerHTML = '<div class="empty">Error consultando Cookidoo</div>';
+  }
 }
 
 // ── Tasks (multi-task system) ──────────────────────────────────────────────
