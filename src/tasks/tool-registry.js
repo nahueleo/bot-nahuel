@@ -3,6 +3,7 @@ import { fetchTopics, formatTopicsMessage, TOPICS as NEWS_TOPICS } from '../serv
 import { getCryptoPrices, formatCryptoMessage, AVAILABLE_COINS } from '../services/crypto.js';
 import { getARSRates, formatCurrencyMessage, RATE_TYPES } from '../services/currency.js';
 import { getDailyQuote, formatQuoteMessage } from '../services/quote.js';
+import { generateMealSuggestion } from '../services/meal-suggestion.js';
 import { getEvents } from '../calendar/client.js';
 import { searchEmails, getUnreadCount } from '../gmail/client.js';
 import { getTasks } from './client.js';
@@ -274,7 +275,65 @@ const TOOLS = [
     },
   },
 
-  // ── 9. Mensaje personalizado ──────────────────────────────────────────────
+  // ── 9. Comidas Low-Carb ───────────────────────────────────────────────────
+  {
+    id: 'meal_suggestion',
+    name: 'Comidas Low-Carb',
+    emoji: '🍽️',
+    description: 'Receta argentina keto/low-carb para almuerzo, merienda o cena liviana',
+    defaultConfig: {
+      mealType:    'almuerzo',
+      ingredients: '',
+      training:    false,
+      notes:       '',
+    },
+    configFields: [
+      {
+        key: 'mealType',
+        type: 'select',
+        label: 'Comida',
+        options: [
+          { value: 'almuerzo',     label: 'Almuerzo' },
+          { value: 'merienda',     label: 'Merienda' },
+          { value: 'cena_liviana', label: 'Cena muy liviana' },
+        ],
+      },
+      {
+        key: 'ingredients',
+        type: 'textarea',
+        label: 'Ingredientes disponibles',
+        placeholder: 'Ej: pechuga de pollo, zapallito verde, huevos y queso cremoso',
+      },
+      {
+        key: 'training',
+        type: 'select',
+        label: 'Entrenamiento',
+        options: [
+          { value: false, label: 'Sin entrenamiento fuerte' },
+          { value: true,  label: 'Entreno fuerte hoy' },
+        ],
+      },
+      {
+        key: 'notes',
+        type: 'textarea',
+        label: 'Notas',
+        placeholder: 'Ej: sin atún, sin horno, que sea para llevar',
+      },
+    ],
+    async run(cfg = {}) {
+      try {
+        return await generateMealSuggestion({
+          ...cfg,
+          training: cfg.training === true || cfg.training === 'true',
+        });
+      } catch (err) {
+        console.warn('[tool:meal_suggestion] Error:', err.message);
+        return null;
+      }
+    },
+  },
+
+  // ── 10. Mensaje personalizado ─────────────────────────────────────────────
   {
     id: 'custom',
     name: 'Mensaje personalizado',

@@ -46,6 +46,7 @@ const DOMAIN_PATTERNS = {
     /qué.*falta|qué.*pendiente|que.*falta|que.*pendiente/i,
     /necesito hacer|tengo pendiente/i,
     /checklist|por hacer/i,
+    /comida|almuerzo|merienda|cena|receta|keto|low[-\s]?carb|ayuno|nutrici[oó]n/i,
   ],
 };
 
